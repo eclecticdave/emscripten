@@ -17,7 +17,10 @@ Module.callMain = function callMain(args) {
   argv.push(0);
   argv = allocate(argv, 'i32', ALLOC_STATIC);
 
-  return _main(argc, argv, 0);
+  try {
+    return _main(argc, argv, 0);
+  }
+  catch(ex) { return ex.m_status; }
 }
 
 function run(args) {
@@ -44,7 +47,8 @@ Module['noInitialRun'] = true;
 #endif
 
 if (!Module['noInitialRun']) {
-  run();
+  var ret = run();
+  print('Exit Status: ' + ret);
 }
 
 // {{POST_RUN_ADDITIONS}}

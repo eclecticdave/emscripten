@@ -1750,12 +1750,14 @@ LibraryManager.library = {
   execv: 'execl',
   execve: 'execl',
   execvp: 'execl',
+  _exitException: function(p_status) { this.m_status = p_status; },
+  _exit__deps: ['_exitException'],
   _exit: function(status) {
     // void _exit(int status);
     // http://pubs.opengroup.org/onlinepubs/000095399/functions/exit.html
     __shutdownRuntime__();
     ABORT = true;
-    throw 'exit(' + status + ') called, at ' + new Error().stack;
+    throw new __exitException(status);
   },
   fork__deps: ['__setErrNo', '$ERRNO_CODES'],
   fork: function() {
