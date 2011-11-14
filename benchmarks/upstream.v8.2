@@ -1,0 +1,39 @@
+test_dlmalloc (__main__.benchmark) ... ok
+test_fannkuch (__main__.benchmark) ... ok
+test_fasta (__main__.benchmark) ... ok
+test_memops (__main__.benchmark) ... ok
+test_primes (__main__.benchmark) ... ok
+test_raytrace (__main__.benchmark) ... ok
+test_skinning (__main__.benchmark) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 275.836s
+
+OK
+Running Emscripten benchmarks... [ Sat Nov 12 01:08:21 2011 | em: commit c5e70d1abcaa7779c3a8692d77745b3d3da9e3b4 ]
+
+   JavaScript  : mean: 0.793 (+-0.002) seconds    (max: 0.796, min: 0.790, noise/signal: 0.003)     (10 runs)
+   Native (gcc): mean: 0.524 (+-0.007) seconds    (max: 0.543, min: 0.512, noise/signal: 0.014)     JS is 1.51 X slower
+
+   JavaScript  : mean: 1.521 (+-0.007) seconds    (max: 1.542, min: 1.517, noise/signal: 0.005)     (10 runs)
+   Native (gcc): mean: 0.402 (+-0.001) seconds    (max: 0.405, min: 0.401, noise/signal: 0.003)     JS is 3.79 X slower
+
+   JavaScript  : mean: 1.520 (+-0.009) seconds    (max: 1.547, min: 1.515, noise/signal: 0.006)     (10 runs)
+   Native (gcc): mean: 0.742 (+-0.001) seconds    (max: 0.745, min: 0.742, noise/signal: 0.001)     JS is 2.05 X slower
+
+   JavaScript  : mean: 2.914 (+-0.021) seconds    (max: 2.967, min: 2.901, noise/signal: 0.007)     (10 runs)
+   Native (gcc): mean: 0.349 (+-0.001) seconds    (max: 0.352, min: 0.347, noise/signal: 0.004)     JS is 8.34 X slower
+
+   JavaScript  : mean: 1.348 (+-0.011) seconds    (max: 1.381, min: 1.343, noise/signal: 0.008)     (10 runs)
+   Native (gcc): mean: 1.213 (+-0.003) seconds    (max: 1.222, min: 1.211, noise/signal: 0.003)     JS is 1.11 X slower
+
+   JavaScript  : mean: 2.800 (+-0.010) seconds    (max: 2.825, min: 2.789, noise/signal: 0.003)     (10 runs)
+   Native (gcc): mean: 0.408 (+-0.001) seconds    (max: 0.409, min: 0.407, noise/signal: 0.002)     JS is 6.86 X slower
+
+   JavaScript  : mean: 2.385 (+-0.018) seconds    (max: 2.411, min: 2.364, noise/signal: 0.007)     (10 runs)
+   Native (gcc): mean: 0.688 (+-0.003) seconds    (max: 0.697, min: 0.685, noise/signal: 0.005)     JS is 3.47 X slower
+
+Total stats:
+
+   JavaScript  : mean: 18.973 (+-7.456) seconds    (max: 29.139, min: 7.926, noise/signal: 0.393)     (10 runs)
+   Native (gcc): mean: 6.181 (+-2.795) seconds    (max: 12.132, min: 3.493, noise/signal: 0.452)     JS is 3.88 X slower
