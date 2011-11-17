@@ -1750,14 +1750,21 @@ LibraryManager.library = {
   execv: 'execl',
   execve: 'execl',
   execvp: 'execl',
-  _exitException: function(p_status) { this.m_status = p_status; },
-  _exit__deps: ['_exitException'],
   _exit: function(status) {
     // void _exit(int status);
     // http://pubs.opengroup.org/onlinepubs/000095399/functions/exit.html
+
+    function ExitStatus() {
+      this.name = "ExitStatus";
+      this.message = "Program terminated with exit(" + status + ")";
+      this.status = status;
+    };
+    ExitStatus.prototype = new Error();
+    ExitStatus.prototype.constructor = ExitStatus;
+
     __shutdownRuntime__();
     ABORT = true;
-    throw new __exitException(status);
+    throw new ExitStatus();
   },
   fork__deps: ['__setErrNo', '$ERRNO_CODES'],
   fork: function() {

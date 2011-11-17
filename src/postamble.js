@@ -20,7 +20,7 @@ Module.callMain = function callMain(args) {
   try {
     return _main(argc, argv, 0);
   }
-  catch(ex) { return ex.m_status; }
+  catch(e) { if (e.name == "ExitStatus") return e.status; throw e; }
 }
 
 function run(args) {
