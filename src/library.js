@@ -1754,6 +1754,7 @@ LibraryManager.library = {
     // void _exit(int status);
     // http://pubs.opengroup.org/onlinepubs/000095399/functions/exit.html
 
+#if CATCH_EXIT_CODE
     function ExitStatus() {
       this.name = "ExitStatus";
       this.message = "Program terminated with exit(" + status + ")";
@@ -1761,10 +1762,16 @@ LibraryManager.library = {
     };
     ExitStatus.prototype = new Error();
     ExitStatus.prototype.constructor = ExitStatus;
+#endif
 
     __shutdownRuntime__();
     ABORT = true;
+
+#if CATCH_EXIT_CODE
     throw new ExitStatus();
+#else 
+    throw 'exit(' + status + ') called, at ' + new Error().stack;
+#endif
   },
   fork__deps: ['__setErrNo', '$ERRNO_CODES'],
   fork: function() {

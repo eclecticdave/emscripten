@@ -17,10 +17,14 @@ Module.callMain = function callMain(args) {
   argv.push(0);
   argv = allocate(argv, 'i32', ALLOC_STATIC);
 
+#if CATCH_EXIT_CODE
   try {
     return _main(argc, argv, 0);
   }
   catch(e) { if (e.name == "ExitStatus") return e.status; throw e; }
+#else
+  return _main(argc, argv, 0);
+#endif
 }
 
 function run(args) {
@@ -48,7 +52,9 @@ Module['noInitialRun'] = true;
 
 if (!Module['noInitialRun']) {
   var ret = run();
+#if CATCH_EXIT_CODE
   print('Exit Status: ' + ret);
+#endif
 }
 
 // {{POST_RUN_ADDITIONS}}
