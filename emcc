@@ -101,6 +101,7 @@ AUTODEBUG = os.environ.get('EMCC_AUTODEBUG') # If set to 1, we will run the auto
                                              # Note that this will disable inclusion of libraries. This is useful because including
                                              # dlmalloc makes it hard to compare native and js builds
 EMCC_CFLAGS = os.environ.get('EMCC_CFLAGS') # Additional compiler flags that we treat as if they were passed to us on the commandline
+EMCC_JSBACKEND = int(os.environ.get('EMCC_USE_LLVM_JSBACKEND') or 0) # Select either llvm JSBackend compiler or standard emscripten compiler. 
 
 if DEBUG: print >> sys.stderr, '\nemcc invocation: ', ' '.join(sys.argv), (' + ' + EMCC_CFLAGS if EMCC_CFLAGS else '')
 if EMCC_CFLAGS: sys.argv.append(EMCC_CFLAGS)
@@ -1066,24 +1067,30 @@ try:
       if DEBUG: save_intermediate('linktime', 'bc')
 
   # Prepare .ll for Emscripten
-  if not LEAVE_INPUTS_RAW:
-    final = shared.Building.llvm_dis(final, final + '.ll')
-  else:
-    assert len(input_files) == 1
-  if DEBUG: save_intermediate('ll', 'll')
+  if not EMCC_JSBACKEND:
+    if not LEAVE_INPUTS_RAW:
+      final = shared.Building.llvm_dis(final, final + '.ll')
+    else:
+      assert len(input_files) == 1
+    if DEBUG: save_intermediate('ll', 'll')
 
-  if AUTODEBUG:
-    if DEBUG: print >> sys.stderr, 'emcc: autodebug'
-    execute([shared.PYTHON, shared.AUTODEBUGGER, final, final + '.ad.ll'])
-    final += '.ad.ll'
-    if DEBUG: save_intermediate('autodebug', 'll')
+    if AUTODEBUG:
+      if DEBUG: print >> sys.stderr, 'emcc: autodebug'
+      execute([shared.PYTHON, shared.AUTODEBUGGER, final, final + '.ad.ll'])
+      final += '.ad.ll'
+      if DEBUG: save_intermediate('autodebug', 'll')
 
-  # Emscripten
   if DEBUG: print >> sys.stderr, 'emcc: LLVM => JS'
-  extra_args = [] if not js_libraries else ['--libraries', ','.join(map(os.path.abspath, js_libraries))]
-  if jcache: extra_args.append('--jcache')
-  final = shared.Building.emscripten(final, append_ext=False, extra_args=extra_args)
-  if DEBUG: save_intermediate('original')
+  if EMCC_JSBACKEND:
+    # Run llvm-js
+    execute([shared.LLVM_COMPILER, '-mtriple=sparc', final, '-o=' + final + '.js'])
+    final += '.js'
+  else:
+    # Emscripten
+    extra_args = [] if not js_libraries else ['--libraries', ','.join(map(os.path.abspath, js_libraries))]
+    if jcache: extra_args.append('--jcache')
+    final = shared.Building.emscripten(final, append_ext=False, extra_args=extra_args)
+    if DEBUG: save_intermediate('original')
 
   # Embed and preload files
   if len(preload_files) + len(embed_files) > 0:
@@ -1131,54 +1138,56 @@ try:
     execute(shlex.split(js_transform, posix=posix) + [os.path.abspath(final)])
     if DEBUG: save_intermediate('transformed')
 
-  # It is useful to run several js optimizer passes together, to save on unneeded unparsing/reparsing
-  js_optimizer_queue = []
-  def flush_js_optimizer_queue():
-    global final, js_optimizer_queue
-    if len(js_optimizer_queue) > 0:
-      if DEBUG < 2:
-        if DEBUG: print >> sys.stderr, 'emcc: applying js optimization passes:', js_optimizer_queue
-        final = shared.Building.js_optimizer(final, js_optimizer_queue, jcache)
-        if DEBUG: save_intermediate('js_opts')
-      else:
-        for name in js_optimizer_queue:
-          print >> sys.stderr, 'emcc: applying js optimization pass:', name
-          final = shared.Building.js_optimizer(final, [name], jcache)
-          save_intermediate(name)
-      js_optimizer_queue = []
+  if not EMCC_JSBACKEND:
+    # It is useful to run several js optimizer passes together, to save on unneeded unparsing/reparsing
+    js_optimizer_queue = []
+    def flush_js_optimizer_queue():
+      global final, js_optimizer_queue
+      if len(js_optimizer_queue) > 0:
+        if DEBUG < 2:
+          if DEBUG: print >> sys.stderr, 'emcc: applying js optimization passes:', js_optimizer_queue
+          final = shared.Building.js_optimizer(final, js_optimizer_queue, jcache)
+          if DEBUG: save_intermediate('js_opts')
+        else:
+          for name in js_optimizer_queue:
+            print >> sys.stderr, 'emcc: applying js optimization pass:', name
+            final = shared.Building.js_optimizer(final, [name], jcache)
+            save_intermediate(name)
+        js_optimizer_queue = []
 
-  if opt_level >= 1:
-    if DEBUG: print >> sys.stderr, 'emcc: running pre-closure post-opts'
+    if opt_level >= 1:
+      if DEBUG: print >> sys.stderr, 'emcc: running pre-closure post-opts'
 
-    if DEBUG >= 2:
-      # Clean up the syntax a bit
-      final = shared.Building.js_optimizer(final, [], jcache)
-      if DEBUG: save_intermediate('pretty')
+      if DEBUG >= 2:
+        # Clean up the syntax a bit
+        final = shared.Building.js_optimizer(final, [], jcache)
+        if DEBUG: save_intermediate('pretty')
 
-    def get_eliminate():
-      return 'eliminate' if not shared.Settings.ALLOW_MEMORY_GROWTH else 'eliminateMemSafe'
+      def get_eliminate():
+        return 'eliminate' if not shared.Settings.ALLOW_MEMORY_GROWTH else 'eliminateMemSafe'
 
-    js_optimizer_queue += [get_eliminate()]
+      js_optimizer_queue += [get_eliminate()]
 
-    js_optimizer_queue += ['simplifyExpressionsPre']
-    if shared.Settings.RELOOP:
-      js_optimizer_queue += ['optimizeShiftsAggressive', get_eliminate()] # aggressive shifts optimization requires loops, it breaks on switches
+      js_optimizer_queue += ['simplifyExpressionsPre']
+      if shared.Settings.RELOOP:
+        js_optimizer_queue += ['optimizeShiftsAggressive', get_eliminate()] # aggressive shifts optimization requires loops, it breaks on switches
 
   if closure:
-    flush_js_optimizer_queue()
+    if not EMCC_JSBACKEND: flush_js_optimizer_queue()
 
     if DEBUG: print >> sys.stderr, 'emcc: running closure'
     final = shared.Building.closure_compiler(final)
     if DEBUG: save_intermediate('closure')
 
-  if opt_level >= 1:
-    if DEBUG: print >> sys.stderr, 'emcc: running post-closure post-opts'
-    js_optimizer_queue += ['simplifyExpressionsPost']
+  if not EMCC_JSBACKEND:
+    if opt_level >= 1:
+      if DEBUG: print >> sys.stderr, 'emcc: running post-closure post-opts'
+      js_optimizer_queue += ['simplifyExpressionsPost']
 
-  if minify_whitespace:
-    js_optimizer_queue += ['compress']
+    if minify_whitespace:
+      js_optimizer_queue += ['compress']
 
-  flush_js_optimizer_queue()
+    flush_js_optimizer_queue()
 
   # If we were asked to also generate HTML, do that
   if final_suffix == 'html':
