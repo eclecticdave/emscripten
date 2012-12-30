@@ -66,7 +66,8 @@ struct Block {
   ~Block();
 
   void AddBranchTo(Block *Target, const char *Condition, const char *Code=NULL);
-
+  void AddBranchTo(Block *Target, Branch *BranchTo);
+  
   // Prints out the instructions code and branchings
   void Render(bool InLoop);
 

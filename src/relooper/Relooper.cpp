@@ -116,6 +116,11 @@ void Block::AddBranchTo(Block *Target, const char *Condition, const char *Code) 
   BranchesOut[Target] = new Branch(Condition, Code);
 }
 
+void Block::AddBranchTo(Block *Target, Branch *BranchTo) {
+  assert(BranchesOut.find(Target) == BranchesOut.end()); // cannot add more than one branch to the same target
+  BranchesOut[Target] = BranchTo;
+}
+
 void Block::Render(bool InLoop) {
   if (IsCheckedMultipleEntry && InLoop) {
     PrintIndented("label = 0;\n");
