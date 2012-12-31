@@ -1083,7 +1083,7 @@ try:
   if DEBUG: print >> sys.stderr, 'emcc: LLVM => JS'
   if EMCC_JSBACKEND:
     # Run llvm-js
-    execute([shared.LLVM_COMPILER, '-mtriple=sparc', final, '-o=' + final + '.js'])
+    execute([shared.LLVM_COMPILER, '-march=js', final, '-o=' + final + '.js'])
     final += '.js'
   else:
     # Emscripten
