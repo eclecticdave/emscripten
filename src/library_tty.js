@@ -137,7 +137,8 @@ mergeInto(LibraryManager.library, {
             } else {
               result = null;
             }
-
+          } else if (Module['get_char'] != undefined) {
+	            result = Module['get_char']();
           } else if (typeof window != 'undefined' &&
             typeof window.prompt == 'function') {
             // Browser.
@@ -153,7 +154,7 @@ mergeInto(LibraryManager.library, {
             }
           }
           if (!result) {
-            return null;
+            return result;
           }
           tty.input = intArrayFromString(result, true);
         }

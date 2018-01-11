@@ -1252,7 +1252,7 @@
         printErr: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
           Module.printChars(2, text, text.length);
-        },
+        },{{{ GET_CHAR }}}
         canvas: (function() {
           var canvas = document.getElementById('canvas');
 
