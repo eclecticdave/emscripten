@@ -808,33 +808,10 @@ var SyscallsLibrary = {
     // hack to support printf in NO_FILESYSTEM
     var stream = SYSCALLS.get(), iov = SYSCALLS.get(), iovcnt = SYSCALLS.get();
     var ret = 0;
-    if (!___syscall146.buffers) {
-      ___syscall146.buffers = [null, [], []]; // 1 => stdout, 2 => stderr
-      ___syscall146.printChar = function(stream, curr) {
-        var buffer = ___syscall146.buffers[stream];
-        var printfn;
-        assert(buffer);
-        if (curr === 0 || curr === {{{ charCode('\n') }}}) {
-          (stream === 1 ? Module['print'] : Module['printErr'])(UTF8ArrayToString(buffer, 0));
-          buffer.length = 0;
-        } else if (curr === null && buffer.length) {
-          printfn = (stream === 1 ? Module['rawPrint'] : Module['rawPrintErr']);
-          if (printfn != undefined) printfn(UTF8ArrayToString(buffer, 0));
-          buffer.length = 0;
-        } else if (curr !== null) {
-          buffer.push(curr);
-        }
-      };
-    }
     for (var i = 0; i < iovcnt; i++) {
       var ptr = {{{ makeGetValue('iov', 'i*8', 'i32') }}};
       var len = {{{ makeGetValue('iov', 'i*8 + 4', 'i32') }}};
-      for (var j = 0; j < len; j++) {
-        ___syscall146.printChar(stream, HEAPU8[ptr+j]);
-      }
-        // Sending null causes output to be printed, even if it didn't end in a
-        // newline.
-        ___syscall146.printChar(stream, null);
+      Module['printChars'](stream, ptr, len);
       ret += len;
     }
     return ret;

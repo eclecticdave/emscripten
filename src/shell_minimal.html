@@ -76,46 +76,35 @@
       var Module = {
         preRun: [],
         postRun: [],
-        print: (function() {
-          var element = document.getElementById('output');
-          if (element) element.value = ''; // clear browser cache
-          return function(text) {
-            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-            // These replacements are necessary if you render to raw HTML
-            //text = text.replace(/&/g, "&amp;");
-            //text = text.replace(/</g, "&lt;");
-            //text = text.replace(/>/g, "&gt;");
-            //text = text.replace('\n', '<br>', 'g');
-            console.log(text);
-            if (element) {
-              element.value += text + "\n";
-              element.scrollTop = element.scrollHeight; // focus on bottom
-            }
-          };
-        })(),
-        printErr: function(text) {
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (0) { // XXX disabled for safety typeof dump == 'function') {
-            dump(text + '\n'); // fast, straight to the real console
-          } else {
-            console.error(text);
+        fdBuf: ['', '', ''],
+        printChars: function(fd, ptr, len) {
+          if (!ptr) return;
+          var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+          var consoleElement = document.getElementById('output');
+          consoleElement.value += str;
+          consoleElement.scrollTop = consoleElement.scrollHeight;
+          var nl = str.indexOf('\n');
+          if (nl == -1) {
+            Module.fdBuf[fd] += str;
+            return;
           }
+          var log = (fd == 2) ? console.error : console.log;
+          log(Module.fdBuf[fd] + str.substr(0, nl));
+          var nextnl = str.indexOf('\n', nl+1);
+          while (nextnl != -1) {
+            log(str.substr(nl+1), nextnl-nl-1);
+            nl = nextnl;
+            nextnl = str.indexOf('\n', nl+1);
+          }
+          Module.fdBuf[fd] = str.substr(nl+1);
         },
-        rawPrint: function(text) {
-          var element = document.getElementById('output');
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (text == "\n") {
-            text = "\r" + text;
-          }
-          element.value += text;
+        print: function() {
+          var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
+          Module.printChars(1, text, text.length);
         },
-        rawPrintErr: function(text) {
-          var element = document.getElementById('output');
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (text == "\n") {
-            text = "\r" + text;
-          }
-          element.value += text;
+        printErr: function() {
+          var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
+          Module.printChars(1, text, text.length);
         },
         canvas: (function() {
           var canvas = document.getElementById('canvas');

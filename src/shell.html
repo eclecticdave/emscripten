@@ -1224,6 +1224,37 @@
       var Module = {
         preRun: [],
         postRun: [],
+        fdBuf: ['', '', ''],
+        printChars: function(fd, ptr, len) {
+          if (!ptr) return;
+          var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+          var consoleElement = document.getElementById('output');
+          consoleElement.value += str;
+          consoleElement.scrollTop = consoleElement.scrollHeight;
+          var nl = str.indexOf('\n');
+          if (nl == -1) {
+            Module.fdBuf[fd] += str;
+            return;
+          }
+          var log = (fd == 2) ? console.error : console.log;
+          log(Module.fdBuf[fd] + str.substr(0, nl));
+          var nextnl = str.indexOf('\n', nl+1);
+          while (nextnl != -1) {
+            log(str.substr(nl+1), nextnl-nl-1);
+            nl = nextnl;
+            nextnl = str.indexOf('\n', nl+1);
+          }
+          Module.fdBuf[fd] = str.substr(nl+1);
+        },
+        print: function() {
+          var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
+          Module.printChars(1, text, text.length);
+        },
+        printErr: function() {
+          var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
+          Module.printChars(1, text, text.length);
+        },
+        /*        
         print: (function() {
           var element = document.getElementById('output');
           if (element) element.value = ''; // clear browser cache
@@ -1249,22 +1280,7 @@
             console.error(text);
           }
         },
-        rawPrint: function(text) {
-          var element = document.getElementById('output');
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (text == "\n") {
-            text = "\r" + text;
-          }
-          element.value += text;
-        },
-        rawPrintErr: function(text) {
-          var element = document.getElementById('output');
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (text == "\n") {
-            text = "\r" + text;
-          }
-          element.value += text;
-        },
+        */
         canvas: (function() {
           var canvas = document.getElementById('canvas');
 

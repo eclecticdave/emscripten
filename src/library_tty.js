@@ -73,6 +73,14 @@ mergeInto(LibraryManager.library, {
         return bytesRead;
       },
       write: function(stream, buffer, offset, length, pos) {
+        if (Module['printChars'] != undefined) {
+          Module['printChars'](stream.fd, buffer.subarray(offset, offset + length), length);
+          if (length) {
+            stream.node.timestamp = Date.now();
+          }
+          return length;
+        }
+
         if (!stream.tty || !stream.tty.ops.put_char) {
           throw new FS.ErrnoError(ERRNO_CODES.ENXIO);
         }
@@ -137,7 +145,8 @@ mergeInto(LibraryManager.library, {
           } else if (typeof window != 'undefined' &&
             typeof window.prompt == 'function') {
             // Browser.
-            result = window.prompt('Input: ');  // returns null on cancel
+            var result;
+            result = window.prompt('Input: ');   // returns null on cancel
             if (result !== null) {
               result += '\n';
             }
@@ -156,13 +165,10 @@ mergeInto(LibraryManager.library, {
         return tty.input.shift();
       },
       put_char: function(tty, val) {
-        if (val === {{{ charCode('\n') }}}) {
+        if (val === null || val === {{{ charCode('\n') }}}) {
           Module['print'](UTF8ArrayToString(tty.output, 0));
           tty.output = [];
-        } else if (val === null && tty.output.length && Module['rawPrint'] != undefined) {
-          Module['rawPrint'](UTF8ArrayToString(tty.output, 0));
-          tty.output = [];
-        } else if (val !== null && val != 0) {
+        } else if (val != 0) {
           tty.output.push(val); // val == 0 would cut text output off in the middle.
         }
       },
@@ -175,13 +181,10 @@ mergeInto(LibraryManager.library, {
     },
     default_tty1_ops: {
       put_char: function(tty, val) {
-        if (val === {{{ charCode('\n') }}}) {
+        if (val === null || val === {{{ charCode('\n') }}}) {
           Module['printErr'](UTF8ArrayToString(tty.output, 0));
-          tty.output = [];
-        } else if (val === null && tty.output.length && Module['rawPrintErr'] != undefined) {
-          Module['rawPrintErr'](UTF8ArrayToString(tty.output, 0));
-          tty.output = [];          
-        } else if (val !== null && val != 0) {
+          tty.output = [];         
+        } else if (val != 0) {
           tty.output.push(val);
         }
       },

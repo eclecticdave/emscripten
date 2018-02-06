@@ -323,12 +323,13 @@ function checkUnflushedContent() {
   // the code is inside libc)
   var print = Module['print'];
   var printErr = Module['printErr'];
-  var rawPrint = Module['rawPrint'];
-  var rawPrintErr = Module['rawPrintErr'];
+  var printChars = Module['printChars'];  
   var has = false;
-  Module['print'] = Module['printErr'] = Module['rawPrint'] = Module['rawPrintErr'] = function(x) {
-    has = true;
+  Module['print'] = Module['printErr'] = function(x) {
+      has = true;
   }
+  Module['printChars'] = function(fd, ptr, len) { has = true; }
+
   try { // it doesn't matter if it fails
 #if NO_FILESYSTEM
     var flush = {{{ '$flush_NO_FILESYSTEM' in addedLibraryItems ? 'flush_NO_FILESYSTEM' : 'null' }}};
@@ -355,8 +356,7 @@ function checkUnflushedContent() {
   } catch(e) {}
   Module['print'] = print;
   Module['printErr'] = printErr;
-  Module['rawPrint'] = rawPrint;
-  Module['rawPrintErr'] = rawPrintErr;  
+  Module['printChars'] = printChars;
   if (has) {
     warnOnce('stdio streams had content in them that was not flushed. you should set NO_EXIT_RUNTIME to 0 (see the FAQ), or make sure to emit a newline when you printf etc.');
   }

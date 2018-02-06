@@ -433,7 +433,15 @@ function UTF8ArrayToString(u8Array, idx) {
   while (u8Array[endPtr]) ++endPtr;
 
   if (endPtr - idx > 16 && u8Array.subarray && UTF8Decoder) {
-    return UTF8Decoder.decode(u8Array.subarray(idx, endPtr));
+    var buf;
+#ifdef USE_PTHREADS
+    // Need to copy the data to a non-shared buffer as TextDecoder isn't compatible with SharedArrayBuffer.
+    // Uint8Array.from would be more readable, but isn't universally available.
+    buf = Uint8Array.prototype.slice.call(u8Array.subarray(idx, endPtr));
+#else
+    buf = u8Array.subarray(idx, endPtr);
+#endif
+    return UTF8Decoder.decode(buf);
   } else {
 #endif
     var u0, u1, u2, u3, u4, u5;

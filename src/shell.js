@@ -271,8 +271,18 @@ else {
 // printErr is preferable to console.warn (works better in shells)
 Module['print'] = typeof console !== 'undefined' ? console.log : (typeof print !== 'undefined' ? print : null);
 Module['printErr'] = typeof printErr !== 'undefined' ? printErr : ((typeof console !== 'undefined' && console.warn) || Module['print']);
-Module['rawPrint'] = typeof process !== 'undefined' ? function(txt) { process.stdout.write(txt); } : (typeof putstr !== 'undefined' ? putstr : null);
-Module['rawPrintErr'] = typeof process !== 'undefined' ? function(txt) { process.stderr.write(txt); } : null;
+
+Module['printChars'] = function(fd, ptr, len) {
+  if (!ptr) return;
+  var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+
+  if (typeof process !== 'undefined') {
+    fd > 1 ? process.stderr.write(str) : process.stdout.write(str);
+  }
+  else if (typeof putstr != 'undefined' && fd == 1) {
+    putstr(str);
+  }
+}
 
 // *** Environment setup code ***
 
