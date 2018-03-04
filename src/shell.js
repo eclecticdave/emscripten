@@ -272,9 +272,11 @@ else {
 Module['print'] = typeof console !== 'undefined' ? console.log : (typeof print !== 'undefined' ? print : null);
 Module['printErr'] = typeof printErr !== 'undefined' ? printErr : ((typeof console !== 'undefined' && console.warn) || Module['print']);
 
-Module['printChars'] = function(fd, ptr, len) {
-  if (!ptr) return;
-  var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+Module['printChars'] = function(str_or_offset, fd, len, buffer) {
+  buffer = buffer || HEAPU8;
+  if (fd == undefined) fd = 1;
+  
+  var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
 
   if (typeof process !== 'undefined') {
     fd > 1 ? process.stderr.write(str) : process.stdout.write(str);

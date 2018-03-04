@@ -73,13 +73,15 @@ mergeInto(LibraryManager.library, {
         return bytesRead;
       },
       write: function(stream, buffer, offset, length, pos) {
+#if USE_PRINTCHARS_FOR_STDOUT == 1
         if (Module['printChars'] != undefined) {
-          Module['printChars'](stream.fd, buffer.subarray(offset, offset + length), length);
+          Module['printChars'](offset, stream.fd, length, buffer);
           if (length) {
             stream.node.timestamp = Date.now();
           }
           return length;
         }
+#endif
 
         if (!stream.tty || !stream.tty.ops.put_char) {
           throw new FS.ErrnoError(ERRNO_CODES.ENXIO);
@@ -91,9 +93,6 @@ mergeInto(LibraryManager.library, {
             throw new FS.ErrnoError(ERRNO_CODES.EIO);
           }
         }
-        // Sending null causes output to be printed, even if it didn't end in a
-        // newline.
-        stream.tty.ops.put_char(stream.tty, null);
         if (length) {
           stream.node.timestamp = Date.now();
         }
@@ -145,7 +144,6 @@ mergeInto(LibraryManager.library, {
           } else if (typeof window != 'undefined' &&
             typeof window.prompt == 'function') {
             // Browser.
-            var result;
             result = window.prompt('Input: ');   // returns null on cancel
             if (result !== null) {
               result += '\n';
@@ -183,7 +181,7 @@ mergeInto(LibraryManager.library, {
       put_char: function(tty, val) {
         if (val === null || val === {{{ charCode('\n') }}}) {
           Module['printErr'](UTF8ArrayToString(tty.output, 0));
-          tty.output = [];         
+          tty.output = [];
         } else if (val != 0) {
           tty.output.push(val);
         }

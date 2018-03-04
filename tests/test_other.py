@@ -3049,7 +3049,30 @@ int main(void) {
 var Module = { print: function(x) { throw '<{(' + x + ')}>' } };
 ''')
 
-    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js']).communicate()
+    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'USE_PRINTCHARS_FOR_STDOUT=0']).communicate()
+    output = run_js(os.path.join(self.get_dir(), 'a.out.js'), stderr=PIPE, full_output=True, engine=NODE_JS, assert_returncode=None)
+    assert r'<{(123456789)}>' in output, output
+
+  def test_module_printChars(self):
+    open('code.cpp', 'w').write(r'''
+#include <stdio.h>
+int main(void) {
+  printf("123456789");
+  return 0;
+}
+''')
+
+    open('pre.js', 'w').write(r'''
+var Module = {
+               printChars: function(str_or_offset, fd, len, buffer) {
+                 buffer = buffer || HEAPU8;
+                 var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
+                 throw '<{(' + str + ')}>';
+               }
+             };
+''')
+
+    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'NO_EXIT_RUNTIME=0', '-s', 'USE_PRINTCHARS_FOR_STDOUT=1']).communicate()
     output = run_js(os.path.join(self.get_dir(), 'a.out.js'), stderr=PIPE, full_output=True, engine=NODE_JS, assert_returncode=None)
     assert r'<{(123456789)}>' in output, output
 
@@ -4943,7 +4966,7 @@ main(const int argc, const char * const * const argv)
     assert FS_MARKER in open('a.out.js').read()
     check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.c'), '-s', 'ERROR_ON_UNDEFINED_SYMBOLS=1'])
     no_size = os.stat('a.out.js').st_size
-    self.assertContained('hello, world!', run_js('a.out.js'))
+    self.assertContained('hello, world! (2)', run_js('a.out.js'))
     assert FS_MARKER not in open('a.out.js').read()
     print('yes fs, no fs:', yes_size, no_size)
     assert yes_size - no_size > 100000 # 100K of FS code is removed

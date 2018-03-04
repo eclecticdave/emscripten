@@ -1225,9 +1225,10 @@
         preRun: [],
         postRun: [],
         fdBuf: ['', '', ''],
-        printChars: function(fd, ptr, len) {
-          if (!ptr) return;
-          var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+        printChars: function(str_or_offset, fd, len, buffer) {
+          buffer = buffer || HEAPU8;
+          if (fd == undefined) fd = 1;
+          var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
           var consoleElement = document.getElementById('output');
           consoleElement.value += str;
           consoleElement.scrollTop = consoleElement.scrollHeight;
@@ -1248,39 +1249,12 @@
         },
         print: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(1, text, text.length);
+          Module.printChars(text, 1, text.length);
         },
         printErr: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(1, text, text.length);
+          Module.printChars(text, 2, text.length);
         },
-        /*        
-        print: (function() {
-          var element = document.getElementById('output');
-          if (element) element.value = ''; // clear browser cache
-          return function(text) {
-            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-            // These replacements are necessary if you render to raw HTML
-            //text = text.replace(/&/g, "&amp;");
-            //text = text.replace(/</g, "&lt;");
-            //text = text.replace(/>/g, "&gt;");
-            //text = text.replace('\n', '<br>', 'g');
-            console.log(text);
-            if (element) {
-              element.value += text + "\n";
-              element.scrollTop = element.scrollHeight; // focus on bottom
-            }
-          };
-        })(),
-        printErr: function(text) {
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          if (0) { // XXX disabled for safety typeof dump == 'function') {
-            dump(text + '\n'); // fast, straight to the real console
-          } else {
-            console.error(text);
-          }
-        },
-        */
         canvas: (function() {
           var canvas = document.getElementById('canvas');
 

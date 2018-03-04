@@ -77,9 +77,10 @@
         preRun: [],
         postRun: [],
         fdBuf: ['', '', ''],
-        printChars: function(fd, ptr, len) {
-          if (!ptr) return;
-          var str = UTF8ArrayToString((typeof ptr === 'number') ? HEAPU8.subarray(ptr, ptr + len) : ptr, 0);
+        printChars: function(str_or_offset, fd, len, buffer) {
+          buffer = buffer || HEAPU8;
+          if (fd == undefined) fd = 1;
+          var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
           var consoleElement = document.getElementById('output');
           consoleElement.value += str;
           consoleElement.scrollTop = consoleElement.scrollHeight;
@@ -88,7 +89,8 @@
             Module.fdBuf[fd] += str;
             return;
           }
-          var log = (fd == 2) ? console.error : console.log;
+          // bind(console) is necessary to fix IE/Edge closed dev tools panel behavior (see PR #6209)
+          var log = (fd == 2) ? console.error.bind(console) : console.log.bind(console);
           log(Module.fdBuf[fd] + str.substr(0, nl));
           var nextnl = str.indexOf('\n', nl+1);
           while (nextnl != -1) {
@@ -100,11 +102,11 @@
         },
         print: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(1, text, text.length);
+          Module.printChars(text, 1, text.length);
         },
         printErr: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(1, text, text.length);
+          Module.printChars(text, 2, text.length);
         },
         canvas: (function() {
           var canvas = document.getElementById('canvas');

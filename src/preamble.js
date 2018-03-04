@@ -419,29 +419,31 @@ function stringToAscii(str, outPtr) {
   return writeAsciiToMemory(str, outPtr, false);
 }
 
-// Given a pointer 'ptr' to a null-terminated UTF8-encoded string in the given array that contains uint8 values, returns
+// Given a pointer 'ptr' to a UTF8-encoded string in the given array that contains uint8 values, returns
 // a copy of that string as a Javascript String object.
+// If len is passed, ptr points to an optionally null-terminated string of up to 'len' bytes.  If len is
+// not passed, ptr must point to a null-terminated string.
 
 #if TEXTDECODER
 var UTF8Decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf8') : undefined;
 #endif
-function UTF8ArrayToString(u8Array, idx) {
+function UTF8ArrayToString(u8Array, idx, len) {
 #if TEXTDECODER
   var endPtr = idx;
+  // If len parameter is not passed, we need to find the length of the string.
   // TextDecoder needs to know the byte length in advance, it doesn't stop on null terminator by itself.
   // Also, use the length info to avoid running tiny strings through TextDecoder, since .subarray() allocates garbage.
-  while (u8Array[endPtr]) ++endPtr;
+  if (len == undefined) while (u8Array[endPtr]) ++endPtr;
+  else endPtr += len;
 
   if (endPtr - idx > 16 && u8Array.subarray && UTF8Decoder) {
-    var buf;
 #ifdef USE_PTHREADS
     // Need to copy the data to a non-shared buffer as TextDecoder isn't compatible with SharedArrayBuffer.
     // Uint8Array.from would be more readable, but isn't universally available.
-    buf = Uint8Array.prototype.slice.call(u8Array.subarray(idx, endPtr));
+    return UTF8Decoder.decode(Uint8Array.prototype.slice.call(u8Array.subarray(idx, endPtr)));
 #else
-    buf = u8Array.subarray(idx, endPtr);
+    return UTF8Decoder.decode(u8Array.subarray(idx, endPtr));
 #endif
-    return UTF8Decoder.decode(buf);
   } else {
 #endif
     var u0, u1, u2, u3, u4, u5;
@@ -450,7 +452,7 @@ function UTF8ArrayToString(u8Array, idx) {
     while (1) {
       // For UTF8 byte structure, see http://en.wikipedia.org/wiki/UTF-8#Description and https://www.ietf.org/rfc/rfc2279.txt and https://tools.ietf.org/html/rfc3629
       u0 = u8Array[idx++];
-      if (!u0) return str;
+      if (!u0 || idx > endPtr) return str;
       if (!(u0 & 0x80)) { str += String.fromCharCode(u0); continue; }
       u1 = u8Array[idx++] & 63;
       if ((u0 & 0xE0) == 0xC0) { str += String.fromCharCode(((u0 & 31) << 6) | u1); continue; }

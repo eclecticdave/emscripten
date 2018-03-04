@@ -811,7 +811,7 @@ var SyscallsLibrary = {
     for (var i = 0; i < iovcnt; i++) {
       var ptr = {{{ makeGetValue('iov', 'i*8', 'i32') }}};
       var len = {{{ makeGetValue('iov', 'i*8 + 4', 'i32') }}};
-      Module['printChars'](stream, ptr, len);
+      if (len > 0) Module['printChars'](ptr, stream, len);
       ret += len;
     }
     return ret;

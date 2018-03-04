@@ -877,3 +877,8 @@ var MEM_INIT_IN_WASM = 0; // for internal use only
 
 var SUPPORT_BASE64_EMBEDDING = 0; // If set to 1, src/base64Utils.js will be included in the bundle.
                                   // This is set internally when needed (SINGLE_FILE)
+
+var USE_PRINTCHARS_FOR_STDOUT = 1; // If set to 0, printf, puts and other stdio output functions will
+                                   // call the old Module['print'] and Module['printErr'] functions.
+                                   // If set to 1 (the default) these function will call the new
+                                   // printChars function instead.
