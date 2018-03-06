@@ -4966,7 +4966,7 @@ main(const int argc, const char * const * const argv)
     assert FS_MARKER in open('a.out.js').read()
     check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.c'), '-s', 'ERROR_ON_UNDEFINED_SYMBOLS=1'])
     no_size = os.stat('a.out.js').st_size
-    self.assertContained('hello, world! (2)', run_js('a.out.js'))
+    self.assertContained('hello, world!', run_js('a.out.js'))
     assert FS_MARKER not in open('a.out.js').read()
     print('yes fs, no fs:', yes_size, no_size)
     assert yes_size - no_size > 100000 # 100K of FS code is removed

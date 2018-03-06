@@ -74,15 +74,11 @@ mergeInto(LibraryManager.library, {
       },
       write: function(stream, buffer, offset, length, pos) {
 #if USE_PRINTCHARS_FOR_STDOUT == 1
-        if (Module['printChars'] != undefined) {
-          Module['printChars'](offset, stream.fd, length, buffer);
-          if (length) {
-            stream.node.timestamp = Date.now();
-          }
-          return length;
+        if (!stream.tty || !stream.tty.ops.write) {
+          throw new FS.ErrnoError(ERRNO_CODES.ENXIO);
         }
-#endif
-
+        stream.tty.ops.write(offset, length, buffer);
+#else
         if (!stream.tty || !stream.tty.ops.put_char) {
           throw new FS.ErrnoError(ERRNO_CODES.ENXIO);
         }
@@ -93,10 +89,11 @@ mergeInto(LibraryManager.library, {
             throw new FS.ErrnoError(ERRNO_CODES.EIO);
           }
         }
+#endif
         if (length) {
           stream.node.timestamp = Date.now();
         }
-        return i;
+        return length;
       }
     },
     default_tty_ops: {
@@ -170,6 +167,11 @@ mergeInto(LibraryManager.library, {
           tty.output.push(val); // val == 0 would cut text output off in the middle.
         }
       },
+      write: function(offset, length, buffer) {
+        if (Module['printChars'] != undefined && length) {
+          Module['printChars'](offset, 1, length, buffer);
+        }
+      },
       flush: function(tty) {
         if (tty.output && tty.output.length > 0) {
           Module['print'](UTF8ArrayToString(tty.output, 0));
@@ -184,6 +186,11 @@ mergeInto(LibraryManager.library, {
           tty.output = [];
         } else if (val != 0) {
           tty.output.push(val);
+        }
+      },
+      write: function(offset, length, buffer) {
+        if (Module['printChars'] != undefined && length) {
+          Module['printChars'](offset, 2, length, buffer);
         }
       },
       flush: function(tty) {
