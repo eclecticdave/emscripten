@@ -831,7 +831,7 @@ var SyscallsLibrary = {
         ___syscall146.printChar(stream, HEAPU8[ptr+j]);
       }
 #else
-      if (len > 0) Module['printChars'](ptr, stream, len);
+      if (len > 0) Module['printChars'](ptr, stream, len, {{{ heapAndOffset('HEAP8', 'ptr') }}});
 #endif
       ret += len;
     }
