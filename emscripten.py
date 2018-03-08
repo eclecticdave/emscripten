@@ -168,7 +168,10 @@ def fixup_metadata_tables(metadata, settings):
     for k, v in metadata['tables'].items():
       curr = v.count(',')+1
       if curr < max_size:
-        metadata['tables'][k] = v.replace(']', (',0'*(max_size - curr)) + ']')
+        if v.count('[]') == 1:
+          metadata['tables'][k] = v.replace(']', (','.join(['0'] * (max_size - curr)) + ']'))
+        else:
+          metadata['tables'][k] = v.replace(']', (',0'*(max_size - curr)) + ']')
 
   if settings['SIDE_MODULE']:
     for k in metadata['tables'].keys():
@@ -519,6 +522,15 @@ def update_settings_glue(settings, metadata):
   settings['MAX_GLOBAL_ALIGN'] = metadata['maxGlobalAlign']
   settings['IMPLEMENTED_FUNCTIONS'] = metadata['implementedFunctions']
 
+  # addFunction support for Wasm backend
+  if settings['WASM_BACKEND'] and settings['RESERVED_FUNCTION_POINTERS'] > 0:
+    start_index = metadata['jsCallStartIndex']
+    # e.g. jsCallFunctionType ['v', 'ii'] -> sig2order{'v': 0, 'ii': 1}
+    sig2order = {sig: i for i, sig in enumerate(metadata['jsCallFuncType'])}
+    # Index in the Wasm function table in which jsCall thunk function starts
+    settings['JSCALL_START_INDEX'] = start_index
+    settings['JSCALL_SIG_ORDER'] = sig2order
+
 
 def compile_settings(compiler_engine, settings, libraries, temp_files):
   # Save settings to a file to work around v8 issue 1579
@@ -689,8 +701,11 @@ function _emscripten_asm_const_%s(%s) {
   asm_consts_text = '\nvar ASM_CONSTS = [' + ',\n '.join(asm_consts) + '];\n'
   asm_funcs_text = '\n'.join(asm_const_funcs) + '\n'
 
+  em_js_funcs = create_em_js(forwarded_json, metadata)
+  em_js_text = '\n'.join(em_js_funcs) + '\n'
+
   body_marker = '// === Body ==='
-  return pre.replace(body_marker, body_marker + '\n' + asm_consts_text + asstr(asm_funcs_text))
+  return pre.replace(body_marker, body_marker + '\n' + asm_consts_text + asstr(asm_funcs_text) + em_js_text)
 
 # Test if the parentheses at body[openIdx] and body[closeIdx] are a match to each other.
 def parentheses_match(body, openIdx, closeIdx):
@@ -1717,8 +1732,7 @@ def emscript_wasm_backend(infile, settings, outfile, libraries=None, compiler_en
   if libraries is None: libraries = []
 
   if shared.Settings.EXPERIMENTAL_USE_LLD:
-    wast, meta = build_wasm_lld(temp_files, infile, outfile, settings, DEBUG)
-    metadata = read_metadata_file_wasm(meta, wast, DEBUG)
+    wast, metadata = build_wasm_lld(temp_files, infile, outfile, settings, DEBUG)
   else:
     wast = build_wasm(temp_files, infile, outfile, settings, DEBUG)
     metadata = read_metadata_wast(wast, DEBUG)
@@ -1764,12 +1778,20 @@ def emscript_wasm_backend(infile, settings, outfile, libraries=None, compiler_en
   exported_implemented_functions = create_exported_implemented_functions_wasm(pre, forwarded_json, metadata, settings)
 
   asm_consts, asm_const_funcs = create_asm_consts_wasm(forwarded_json, metadata)
-  pre = pre.replace('// === Body ===', '// === Body ===\n' + '\nvar ASM_CONSTS = [' + ',\n '.join(asm_consts) + '];\n' + '\n'.join(asm_const_funcs) + '\n')
+  em_js_funcs = create_em_js(forwarded_json, metadata)
+  pre = pre.replace(
+    '// === Body ===',
+    ('// === Body ===\n\nvar ASM_CONSTS = [' +
+      ',\n '.join(asm_consts) + '];\n' +
+      asstr('\n'.join(asm_const_funcs)) +
+      '\n'.join(em_js_funcs) + '\n'))
 
   outfile.write(pre)
   pre = None
 
   invoke_funcs = read_wast_invoke_imports(wast)
+  # List of function signatures used in jsCall functions, e.g.['v', 'vi']
+  jscall_sigs = metadata.get('jsCallFuncType', [])
 
   try:
     del forwarded_json['Variables']['globals']['_llvm_global_ctors'] # not a true variable
@@ -1777,11 +1799,13 @@ def emscript_wasm_backend(infile, settings, outfile, libraries=None, compiler_en
     pass
 
   # sent data
-  sending = create_sending_wasm(invoke_funcs, forwarded_json, metadata, settings)
+  sending = create_sending_wasm(invoke_funcs, jscall_sigs, forwarded_json,
+                                metadata, settings)
   receiving = create_receiving_wasm(exported_implemented_functions, settings)
 
   # finalize
-  module = create_module_wasm(sending, receiving, invoke_funcs, exported_implemented_functions, settings)
+  module = create_module_wasm(sending, receiving, invoke_funcs, jscall_sigs,
+                              exported_implemented_functions, settings)
 
   write_output_file(outfile, post, module)
   module = None
@@ -1833,8 +1857,9 @@ def build_wasm(temp_files, infile, outfile, settings, DEBUG):
 
 
 def build_wasm_lld(temp_files, infile, outfile, settings, DEBUG):
-  wasm_link_metadata = os.path.join(shared.Settings.BINARYEN_ROOT, 'bin', 'wasm-link-metadata')
+  assert shared.Settings.BINARYEN_ROOT, 'need BINARYEN_ROOT config set so we can use Binaryen tools on the backend output'
   wasm_emscripten_finalize = os.path.join(shared.Settings.BINARYEN_ROOT, 'bin', 'wasm-emscripten-finalize')
+  wasm_as = os.path.join(shared.Settings.BINARYEN_ROOT, 'bin', 'wasm-as')
   wasm_dis = os.path.join(shared.Settings.BINARYEN_ROOT, 'bin', 'wasm-dis')
 
   def debug_copy(src, dst):
@@ -1856,14 +1881,10 @@ def build_wasm_lld(temp_files, infile, outfile, settings, DEBUG):
       t = time.time()
       debug_copy(temp_o, 'emcc-llvm-backend-output.o')
 
-    assert shared.Settings.BINARYEN_ROOT, 'need BINARYEN_ROOT config set so we can use Binaryen tools on the backend output'
     basename = shared.unsuffixed(outfile.name)
     wast = basename + '.wast'
     wasm = basename + '.wasm'
     base_wasm = basename + '.lld.wasm'
-    meta = basename + '.json'
-    shared.check_call([wasm_link_metadata, temp_o, '-o', meta])
-    debug_copy(meta, 'lld-metadata.json')
 
     libc_rt_lib = shared.Cache.get('wasm_libc_rt.a', wasm_rt_fail('wasm_libc_rt.a'), 'a')
     compiler_rt_lib = shared.Cache.get('wasm_compiler_rt.a', wasm_rt_fail('wasm_compiler_rt.a'), 'a')
@@ -1881,19 +1902,23 @@ def build_wasm_lld(temp_files, infile, outfile, settings, DEBUG):
     ])
     debug_copy(base_wasm, 'base_wasm.wasm')
 
-    shared.check_call([wasm_emscripten_finalize, base_wasm, '-o', wasm])
+    # TODO: We currently read exports from the wast in order to generate
+    # metadata. So we emit text here so we can parse wast from python.
+    shared.check_call([wasm_emscripten_finalize, base_wasm, '-o', wast, '-S',
+                       '--global-base=%s' % shared.Settings.GLOBAL_BASE,
+                       ('--emscripten-reserved-function-pointers=%d' %
+                        shared.Settings.RESERVED_FUNCTION_POINTERS)])
+    debug_copy(wast, 'lld-emscripten-output.wast')
+
+    shared.check_call([wasm_as, wast, '-o', wasm])
     debug_copy(wasm, 'lld-emscripten-output.wasm')
 
-    # TODO: This is gross. We currently read exports from the wast in order to
-    # generate metadata. So this disassembles the binary so we can parse wast
-    # from python.
-    shared.check_call([wasm_dis, wasm, '-o', wast])
+    metadata = read_metadata_wast(wast, DEBUG)
 
   if DEBUG:
     logging.debug('  emscript: lld took %s seconds' % (time.time() - t))
     t = time.time()
-    debug_copy(wast, 'emcc-lld-output.wast')
-  return wast, meta
+  return wast, metadata
 
 
 def read_metadata_wast(wast, DEBUG):
@@ -1901,18 +1926,12 @@ def read_metadata_wast(wast, DEBUG):
   parts = output.split('\n;; METADATA:')
   assert len(parts) == 2
   metadata_raw = parts[1]
-  return create_metadata_wasm(metadata_raw, wast, DEBUG)
+  return create_metadata_wasm(metadata_raw, DEBUG)
 
 
-def read_metadata_file_wasm(meta, wast, DEBUG):
-  metadata_raw = open(meta).read()
-  return create_metadata_wasm(metadata_raw, wast, DEBUG)
-
-
-def create_metadata_wasm(metadata_raw, wast, DEBUG):
+def create_metadata_wasm(metadata_raw, DEBUG):
   if DEBUG: logging.debug("METAraw %s", metadata_raw)
   metadata = load_metadata(metadata_raw)
-  add_metadata_from_wast(metadata, wast)
   if DEBUG: logging.debug(repr(metadata))
   return metadata
 
@@ -1943,6 +1962,7 @@ def create_exported_implemented_functions_wasm(pre, forwarded_json, metadata, se
 
   return exported_implemented_functions
 
+
 def create_asm_consts_wasm(forwarded_json, metadata):
   asm_consts = [0]*len(metadata['asmConsts'])
   all_sigs = []
@@ -1950,26 +1970,60 @@ def create_asm_consts_wasm(forwarded_json, metadata):
     const = asstr(v[0])
     sigs = v[1]
     const = trim_asm_const_body(const)
-    const = '{ ' + const + ' }'
     args = []
-    arity = max(map(len, sigs)) - 1
+    max_arity = 16
+    arity = 0
+    for i in range(max_arity):
+      if ('$' + str(i)) in const:
+        arity = i + 1
     for i in range(arity):
       args.append('$' + str(i))
-    const = 'function(' + ', '.join(args) + ') ' + const
+    const = 'function(' + ', '.join(args) + ') {' + const + '}'
     asm_consts[int(k)] = const
     all_sigs += sigs
 
   asm_const_funcs = []
   for sig in set(all_sigs):
     forwarded_json['Functions']['libraryFunctions']['_emscripten_asm_const_' + sig] = 1
-    args = ['a%d' % i for i in range(len(sig)-1)]
-    all_args = ['code'] + args
     asm_const_funcs.append(r'''
-function _emscripten_asm_const_%s(%s) {
-return ASM_CONSTS[code](%s);
-}''' % (asstr(sig), ', '.join(all_args), ', '.join(args)))
-
+function _emscripten_asm_const_%s(code, sig_ptr, argbuf) {
+  var sig = AsciiToString(sig_ptr);
+  var args = [];
+  var align_to = function(ptr, align) {
+    return (ptr+align-1) & ~(align-1);
+  };
+  var buf = argbuf;
+  for (var i = 0; i < sig.length; i++) {
+    var c = sig[i];
+    if (c == 'd' || c == 'f') {
+      buf = align_to(buf, 8);
+      args.push(HEAPF64[(buf >> 3)]);
+      buf += 8;
+    } else if (c == 'i') {
+      buf = align_to(buf, 4);
+      args.push(HEAPU32[(buf >> 2)]);
+      buf += 4;
+    }
+  }
+  return ASM_CONSTS[code].apply(null, args);
+}''' % sig)
   return asm_consts, asm_const_funcs
+
+
+def create_em_js(forwarded_json, metadata):
+  em_js_funcs = []
+  separator = '<::>'
+  for name, raw in metadata.get('emJsFuncs', {}).items():
+    parts = raw.split(separator)
+    assert len(parts) >= 2
+    args, body = parts[0], separator.join(parts[1:])
+    args = args[1:-1].split(',')
+    arg_names = [arg.split()[-1] for arg in args if arg]
+    func = 'function {}({}){}'.format(name, ','.join(arg_names), body)
+    em_js_funcs.append(func)
+    forwarded_json['Functions']['libraryFunctions'][name] = 1
+
+  return em_js_funcs
 
 
 def read_wast_invoke_imports(wast):
@@ -1983,7 +2037,8 @@ def read_wast_invoke_imports(wast):
   return invoke_funcs
 
 
-def create_sending_wasm(invoke_funcs, forwarded_json, metadata, settings):
+def create_sending_wasm(invoke_funcs, jscall_sigs, forwarded_json, metadata,
+                        settings):
   basic_funcs = ['abort', 'assert', 'enlargeMemory', 'getTotalMemory']
   if settings['ABORTING_MALLOC']:
     basic_funcs += ['abortOnCannotGrowMemory']
@@ -2000,7 +2055,10 @@ def create_sending_wasm(invoke_funcs, forwarded_json, metadata, settings):
   implemented_functions = set(metadata['implementedFunctions'])
   global_funcs = list(set([key for key, value in forwarded_json['Functions']['libraryFunctions'].items() if value != 2]).difference(set(global_vars)).difference(implemented_functions))
 
-  send_items = basic_funcs + invoke_funcs + global_funcs + basic_vars + global_vars
+  jscall_funcs = ['jsCall_' + sig for sig in jscall_sigs]
+
+  send_items = (basic_funcs + invoke_funcs + jscall_funcs + global_funcs +
+                basic_vars + global_vars)
   def math_fix(g):
     return g if not g.startswith('Math_') else g.split('_')[1]
   return '{ ' + ', '.join(['"' + math_fix(s) + '": ' + s for s in send_items]) + ' }'
@@ -2026,9 +2084,11 @@ return real_''' + asmjs_mangle(s) + '''.apply(null, arguments);
   return receiving
 
 
-def create_module_wasm(sending, receiving, invoke_funcs, exported_implemented_functions, settings):
+def create_module_wasm(sending, receiving, invoke_funcs, jscall_sigs,
+                       exported_implemented_functions, settings):
   access_quote = access_quoter(settings)
   invoke_wrappers = create_invoke_wrappers(invoke_funcs)
+  jscall_funcs = create_jscall_funcs(jscall_sigs)
 
   the_global = '{}'
 
@@ -2050,16 +2110,12 @@ var asm = Module['asm'](%s, %s, buffer);
      'Module' + access_quote('asmLibraryArg'),
      receiving)]
 
-  # wasm backend stack goes down, and is stored in the first global var location
   module.append('''
-STACKTOP = STACK_BASE + TOTAL_STACK;
-STACK_MAX = STACK_BASE;
-HEAP32[%d >> 2] = STACKTOP;
 var stackAlloc = Module['_stackAlloc'];
 var stackSave = Module['_stackSave'];
 var stackRestore = Module['_stackRestore'];
 var establishStackSpace = Module['establishStackSpace'];
-''' % shared.Settings.GLOBAL_BASE)
+''')
 
   # some runtime functionality may not have been generated in
   # the wasm; provide a JS shim for it
@@ -2068,6 +2124,7 @@ var establishStackSpace = Module['establishStackSpace'];
       module.append('var %s;\n' % name)
 
   module.append(invoke_wrappers)
+  module.append(jscall_funcs)
   return module
 
 def create_backend_args_wasm(infile, temp_s, settings):
@@ -2109,6 +2166,8 @@ def create_s2wasm_args(temp_s):
   args += ['--global-base=%d' % shared.Settings.GLOBAL_BASE]
   args += ['--initial-memory=%d' % shared.Settings.TOTAL_MEMORY]
   args += ['--allow-memory-growth'] if shared.Settings.ALLOW_MEMORY_GROWTH else []
+  args += ['--emscripten-reserved-function-pointers=%d' %
+           shared.Settings.RESERVED_FUNCTION_POINTERS]
   args += ['-l', libc_rt_lib]
   args += ['-l', compiler_rt_lib]
 
@@ -2132,6 +2191,7 @@ def load_metadata(metadata_raw):
     'maxGlobalAlign': 0,
     'initializers': [],
     'exports': [],
+    'emJsFuncs': {},
   }
 
   for k, v in metadata_json.items():
@@ -2146,50 +2206,6 @@ def load_metadata(metadata_raw):
   return metadata
 
 
-def add_metadata_from_wast(metadata, wast):
-  """Reads .wast file and adds metadata we can read from the code.
-
-  TODO: emit this metadata directly from s2wasm.
-  """
-  for line in open(wast).readlines():
-    line = line.strip()
-    if line.startswith('(import '):
-      parts = line.split()
-      # Don't include Invoke wrapper names (for asm.js-style exception handling)
-      # in metadata[declares], the invoke wrappers will be generated in
-      # this script later.
-      import_type = parts[3][1:]
-      import_name = parts[2][1:-1]
-      if import_type == 'memory':
-        continue
-      elif import_type == 'func':
-        if not import_name.startswith('invoke_'):
-          metadata['declares'].append(import_name)
-      elif import_type == 'global':
-        metadata['externs'].append('_' + import_name)
-      else:
-        assert False, 'Unhandled import type "%s"' % import_type
-    elif line.startswith('(func '):
-      parts = line.split()
-      func_name = parts[1][1:]
-      metadata['implementedFunctions'].append('_' + func_name)
-    elif line.startswith('(export '):
-      parts = line.split()
-      export_name = parts[1][1:-1]
-      export_type = parts[2][1:]
-      if export_type == 'func':
-        assert asmjs_mangle(export_name) not in metadata['exports']
-        metadata['exports'].append(export_name)
-      elif export_type == 'global':
-        # Ignore global exports
-        pass
-      else:
-        assert False, 'Unhandled export type "%s"' % export_type
-
-  # we emit those ourselves
-  metadata['declares'] = [x for x in metadata['declares'] if not x.startswith('emscripten_asm_const')]
-
-
 def create_invoke_wrappers(invoke_funcs):
   """Asm.js-style exception handling: invoke wrapper generation."""
   invoke_wrappers = ''
@@ -2197,6 +2213,13 @@ def create_invoke_wrappers(invoke_funcs):
     sig = invoke[len('invoke_'):]
     invoke_wrappers += '\n' + shared.JS.make_invoke(sig) + '\n'
   return invoke_wrappers
+
+
+def create_jscall_funcs(sigs):
+  jscall_funcs = ''
+  for i, sig in enumerate(sigs):
+    jscall_funcs += '\n' + shared.JS.make_jscall(sig, i) + '\n'
+  return jscall_funcs
 
 
 def asmjs_mangle(name):

@@ -232,7 +232,12 @@ class RunnerCore(unittest.TestCase):
           for dirname in dirnames: temp_files_after_run.append(os.path.normpath(os.path.join(root, dirname)))
           for filename in filenames: temp_files_after_run.append(os.path.normpath(os.path.join(root, filename)))
 
-        left_over_files = list(set(temp_files_after_run) - set(self.temp_files_before_run))
+        # Our leak detection will pick up *any* new temp files in the temp dir. They may not be due to
+        # us, but e.g. the browser when running browser tests. Until we figure out a proper solution,
+        # ignore some temp file names that we see on our CI infrastructure.
+        ignorable_files = ['/tmp/tmpaddon']
+
+        left_over_files = list(set(temp_files_after_run) - set(self.temp_files_before_run) - set(ignorable_files))
         if len(left_over_files) > 0:
           print('ERROR: After running test, there are ' + str(len(left_over_files)) + ' new temporary files/directories left behind:', file=sys.stderr)
           for f in left_over_files:
@@ -733,13 +738,12 @@ def harness_server_func(q, port):
       s.send_header("Content-type", "text/html")
       s.end_headers()
       if s.path == '/run_harness':
-        s.wfile.write(open(path_from_root('tests', 'browser_harness.html')).read())
+        s.wfile.write(open(path_from_root('tests', 'browser_harness.html'), 'rb').read())
       else:
-        result = 'False'
+        result = b'False'
         if not q.empty():
           result = q.get()
         s.wfile.write(result)
-      s.wfile.close()
     def log_request(code=0, size=0):
       # don't log; too noisy
       pass
@@ -760,7 +764,7 @@ def server_func(dir, q, port):
         self.send_header('Connection','close')
         self.send_header('Expires','-1')
         self.end_headers()
-        self.wfile.write('OK')
+        self.wfile.write(b'OK')
       else:
         # Use SimpleHTTPServer default file serving operation for GET.
         SimpleHTTPRequestHandler.do_GET(self)
@@ -824,7 +828,7 @@ class BrowserCore(RunnerCore):
             time.sleep(1)
         else:
           raise Exception('[Test harness server failed to start up in a timely manner]')
-        self.harness_queue.put('http://localhost:%s/%s' % (self.test_port, html_file))
+        self.harness_queue.put(asbytes('http://localhost:%s/%s' % (self.test_port, html_file)))
         output = '[no http server activity]'
         start = time.time()
         if timeout is None: timeout = self.browser_timeout
@@ -987,7 +991,7 @@ class BrowserCore(RunnerCore):
       if not manual_reference:
         args = args + ['--pre-js', 'reftest.js', '-s', 'GL_TESTING=1']
     all_args = [PYTHON, EMCC, '-s', 'IN_TEST_HARNESS=1', temp_filepath, '-o', outfile] + args
-    #print 'all args:', all_args
+    #print('all args:', all_args)
     try_delete(outfile)
     Popen(all_args).communicate()
     assert os.path.exists(outfile)

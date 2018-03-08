@@ -10,6 +10,37 @@ Not all changes are documented here. In particular, new features, user-oriented 
 Current Trunk
 -------------
 
+v1.37.35: 02/23/2018
+--------------------
+ - MALLOC option, allowing picking between dlmalloc (previous allocator and still the default) and emmalloc, a new allocator which is smaller and simpler.
+ - Binaryen update that should fix all known determinism bugs.
+
+v1.37.34: 02/16/2018
+--------------------
+ - `addFunction` is now supported on LLVM wasm backend, but when being used on the wasm backend, you need to provide an additional second argument, a Wasm function signature string. Each character within a signature string represents a type. The first character represents the return type of a function, and remaining characters are for parameter types.
+    - 'v': void type
+    - 'i': 32-bit integer type
+    - 'j': 64-bit integer type (currently does not exist in JavaScript)
+    - 'f': 32-bit float type
+    - 'd': 64-bit float type
+   For asm.js and asm2wasm you can provide the optional second argument, but it isn't needed. For that reason this isn't a breaking change, however, providing the second argument is recommended so that code is portable across all backends and modes.
+
+v1.37.33: 02/02/2018
+--------------------
+
+v1.37.32: 01/31/2018
+--------------------
+
+v1.37.31: 01/31/2018
+--------------------
+ - LLVM and clang updates from upstream (5.0svn, close 5.0 release).
+
+v1.37.30: 01/31/2018
+--------------------
+
+v1.37.29: 01/24/2018
+--------------------
+
 v1.37.28: 01/08/2018
 --------------------
  - Breaking change: Don't export the `ALLOC_*` numeric constants by default. As with previous changes, a warning will be shown in `-O0` and when `ASSERTIONS` are on if they are used.

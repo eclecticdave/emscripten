@@ -62,6 +62,15 @@ var TOTAL_STACK = 5*1024*1024; // The total stack size. There is no way to enlar
 var TOTAL_MEMORY = 16777216;     // The total amount of memory to use. Using more memory than this will
                                  // cause us to expand the heap, which can be costly with typed arrays:
                                  // we need to copy the old heap into a new one in that case.
+var MALLOC = "dlmalloc"; // What malloc()/free() to use, out of
+                         //  * dlmalloc - a powerful general-purpose malloc
+                         //  * emmalloc - a simple and compact malloc designed for emscripten
+                         // dlmalloc is necessary for multithreading, split memory, and other special
+                         // modes, and will be used automatically in those cases.
+                         // In general, if you don't need one of those special modes, and if you don't
+                         // allocate very many small objects, you should use emmalloc since it's
+                         // smaller. Otherwise, if you do allocate many small objects, dlmalloc
+                         // is usually worth the extra size.
 var ABORTING_MALLOC = 1; // If 1, then when malloc would fail we abort(). This is nonstandard behavior,
                          // but makes sense for the web since we have a fixed amount of memory that
                          // must all be allocated up front, and so (a) failing mallocs are much more
@@ -440,7 +449,7 @@ var INCLUDE_FULL_LIBRARY = 0; // Include all JS library functions instead of the
                               // Note that this only applies to js libraries, *not* C. You
                               // will need the main file to include all needed C libraries.
                               // For example, if a module uses malloc or new, you will
-                              // need to use those in the main file too to pull in dlmalloc
+                              // need to use those in the main file too to pull in malloc
                               // for use by the module.
 
 var SHELL_FILE = 0; // set this to a string to override the shell file used
@@ -561,6 +570,16 @@ var MODULARIZE = 0; // By default we emit all code in a straightforward way into
                     // Note the parentheses - we are calling EXPORT_NAME in order to instantiate
                     // the module. (This allows, in particular, for you to create multiple
                     // instantiations, etc.)
+                    //
+                    // If you add --pre-js or --post-js files, they will be included inside
+                    // the module with the rest of the emitted code. That way, they can be
+                    // optimized together with it. (If you want something outside of the module,
+                    // that is, literally before or after all the code including the extra
+                    // MODULARIZE code, you can do that by modifying the JS yourself after
+                    // emscripten runs. While --pre-js and --post-js happen to do that in
+                    // non-modularize mode, their big feature is that they add code to be
+                    // optimized with the rest of the emitted code, allowing better dead code
+                    // elimination and minification.)
                     //
                     // Modularize also provides a promise-like API,
                     //
@@ -749,6 +768,7 @@ var USE_BULLET = 0; // 1 = use bullet from emscripten-ports
 var USE_VORBIS = 0; // 1 = use vorbis from emscripten-ports
 var USE_OGG = 0; // 1 = use ogg from emscripten-ports
 var USE_FREETYPE = 0; // 1 = use freetype from emscripten-ports
+var USE_HARFBUZZ = 0; // 1 = use harfbuzz from harfbuzz upstream
 var USE_COCOS2D = 0; // 3 = use cocos2d v3 from emscripten-ports
 
 var SDL2_IMAGE_FORMATS = []; // Formats to support in SDL2_image. Valid values: bmp, gif, lbm, pcx, png, pnm, tga, xcf, xpm, xv
@@ -779,6 +799,14 @@ var IN_TEST_HARNESS = 0; // If true, the current build is performed for the Emsc
 var USE_PTHREADS = 0; // If true, enables support for pthreads.
 
 var PTHREAD_POOL_SIZE = 0; // Specifies the number of web workers that are preallocated before runtime is initialized. If 0, workers are created on demand.
+
+var DEFAULT_PTHREAD_STACK_SIZE = 2*1024*1024; // If not explicitly specified, this is the stack size to use for newly created pthreads.
+                                              // According to http://man7.org/linux/man-pages/man3/pthread_create.3.html, default stack size on
+                                              // Linux/x86-32 for a new thread is 2 megabytes, so follow the same convention. Use
+                                              // pthread_attr_setstacksize() at thread creation time to explicitly specify the stack size, in which case
+                                              // this value is ignored. Note that the asm.js/wasm function call control flow stack is separate from this
+                                              // stack, and this stack only contains certain function local variables, such as those that have their
+                                              // addresses taken, or ones that are too large to fit as local vars in asm.js/wasm code.
 
 // Specifies the value returned by the function emscripten_num_logical_cores()
 // if navigator.hardwareConcurrency is not supported. Pass in a negative number

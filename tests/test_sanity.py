@@ -315,11 +315,12 @@ class sanity(RunnerCore):
 
     try:
       os.environ['EM_IGNORE_SANITY'] = '1'
-      for version, succeed in [('v0.7.9', False),
-                               ('v0.8.0', True),
-                               ('v0.8.1', True),
-                               ('v0.10.21-pre', True),
+      for version, succeed in [('v0.8.0', False),
+                               ('v4.1.0', False),
+                               ('v4.1.1', True),
+                               ('v4.2.3-pre', True),
                                ('cheez', False)]:
+        print(version, succeed)
         f = open(path_from_root('tests', 'fake', 'nodejs'), 'w')
         f.write('#!/bin/sh\n')
         f.write('''if [ $1 = "--version" ]; then
@@ -707,6 +708,8 @@ fi
       ([PYTHON, 'embuilder.py', 'build', 'waka'], 'ERROR', False, []),
       ([PYTHON, 'embuilder.py', 'build', 'libc'], ['building and verifying libc', 'success'], True, ['libc.bc']),
       ([PYTHON, 'embuilder.py', 'build', 'libc-mt'], ['building and verifying libc-mt', 'success'], True, ['libc-mt.bc']),
+      ([PYTHON, 'embuilder.py', 'build', 'emmalloc'], ['building and verifying emmalloc', 'success'], True, ['emmalloc.bc']),
+      ([PYTHON, 'embuilder.py', 'build', 'emmalloc_debug'], ['building and verifying emmalloc', 'success'], True, ['emmalloc_debug.bc']),
       ([PYTHON, 'embuilder.py', 'build', 'dlmalloc'], ['building and verifying dlmalloc', 'success'], True, ['dlmalloc.bc']),
       ([PYTHON, 'embuilder.py', 'build', 'dlmalloc_debug'], ['building and verifying dlmalloc', 'success'], True, ['dlmalloc_debug.bc']),
       ([PYTHON, 'embuilder.py', 'build', 'dlmalloc_threadsafe'], ['building and verifying dlmalloc_threadsafe', 'success'], True, ['dlmalloc_threadsafe.bc']),
@@ -725,6 +728,7 @@ fi
       ([PYTHON, 'embuilder.py', 'build', 'sdl2'], ['success'], True, [os.path.join('ports-builds', 'sdl2', 'libsdl2.bc')]),
       ([PYTHON, 'embuilder.py', 'build', 'sdl2-image'], ['success'], True, [os.path.join('ports-builds', 'sdl2-image', 'libsdl2_image.bc')]),
       ([PYTHON, 'embuilder.py', 'build', 'freetype'], ['building and verifying freetype', 'success'], True, [os.path.join('ports-builds', 'freetype', 'libfreetype.a')]),
+      ([PYTHON, 'embuilder.py', 'build', 'harfbuzz'], ['building and verifying harfbuzz', 'success'], True, [os.path.join('ports-builds', 'harfbuzz', 'libharfbuzz.a')]),
       ([PYTHON, 'embuilder.py', 'build', 'sdl2-ttf'], ['building and verifying sdl2-ttf', 'success'], True, [os.path.join('ports-builds', 'sdl2-ttf', 'libsdl2_ttf.bc')]),
       ([PYTHON, 'embuilder.py', 'build', 'sdl2-net'], ['building and verifying sdl2-net', 'success'], True, [os.path.join('ports-builds', 'sdl2-net', 'libsdl2_net.bc')]),
       ([PYTHON, 'embuilder.py', 'build', 'binaryen'], ['building and verifying binaryen', 'success'], True, []),

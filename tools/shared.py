@@ -1877,7 +1877,7 @@ class Building(object):
       run_process([LLVM_OPT] + inputs + opts + ['-o', target], stdout=PIPE)
       assert os.path.exists(target), 'llvm optimizer emitted no output.'
     except subprocess.CalledProcessError as e:
-      logging.error('Failed to run llvm optimizations: ' + e.stdout)
+      logging.error('Failed to run llvm optimizations: ' + e.output)
       for i in inputs:
         if not os.path.exists(i):
           logging.warning('Note: Input file "' + i + '" did not exist.')
@@ -2089,6 +2089,7 @@ class Building(object):
       filename = temp
     if not return_output:
       next = original_filename + '.jso.js'
+      configuration.get_temp_files().note(next)
       subprocess.check_call(NODE_JS + [js_optimizer.JS_OPTIMIZER, filename] + passes, stdout=open(next, 'w'))
       return next
     else:
@@ -2210,19 +2211,16 @@ class Building(object):
   # and wasm optimizations; here we do the very final optimizations on them
   @staticmethod
   def minify_wasm_js(js_file, wasm_file, expensive_optimizations, minify_whitespace, use_closure_compiler, debug_info, emit_symbol_map):
-    temp_files = configuration.get_temp_files()
     # start with JSDCE, to clean up obvious JS garbage. When optimizing for size,
     # use AJSDCE (aggressive JS DCE, performs multiple iterations)
     passes = ['noPrintMetadata', 'JSDCE' if not expensive_optimizations else 'AJSDCE']
     if minify_whitespace:
       passes.append('minifyWhitespace')
     logging.debug('running cleanup on shell code: ' + ' '.join(passes))
-    temp_files.note(js_file)
     js_file = Building.js_optimizer_no_asmjs(js_file, passes)
     # if we are optimizing for size, shrink the combined wasm+JS
     # TODO: support this when a symbol map is used
     if expensive_optimizations and not emit_symbol_map:
-      temp_files.note(js_file)
       js_file = Building.metadce(js_file, wasm_file, minify_whitespace=minify_whitespace, debug_info=debug_info)
       # now that we removed unneeded communication between js and wasm, we can clean up
       # the js some more.
@@ -2230,12 +2228,10 @@ class Building(object):
       if minify_whitespace:
         passes.append('minifyWhitespace')
       logging.debug('running post-meta-DCE cleanup on shell code: ' + ' '.join(passes))
-      temp_files.note(js_file)
       js_file = Building.js_optimizer_no_asmjs(js_file, passes)
     # finally, optionally use closure compiler to finish cleaning up the JS
     if use_closure_compiler:
       logging.debug('running closure on shell code')
-      temp_files.note(js_file)
       js_file = Building.closure_compiler(js_file, pretty=not minify_whitespace)
     return js_file
 
@@ -2282,7 +2278,6 @@ class Building(object):
     if minify_whitespace:
       passes.append('minifyWhitespace')
     extra_info = { 'unused': unused }
-    temp_files.note(js_file)
     return Building.js_optimizer_no_asmjs(js_file, passes, extra_info=json.dumps(extra_info))
 
   # the exports the user requested
@@ -2526,12 +2521,27 @@ class JS(object):
     return ret
 
   @staticmethod
-  def make_jscall(sig, named=True):
+  def make_jscall(sig, sig_order=0, named=True):
     fnargs = ','.join(['a' + str(i) for i in range(1, len(sig))])
     args = 'index' + (',' if fnargs else '') + fnargs
+    # While asm.js/fastcomp's addFunction support preallocates
+    # Settings.RESERVED_FUNCTION_POINTERS slots in functionPointers array, on
+    # the Wasm backend we reserve that number of slots for each possible
+    # function signature, so it is (Settings.RESERVED_FUNCTION_POINTERS * # of
+    # indirectly called function signatures) slots in total. So the index to
+    # functionPointers array should be adjusted according to the order of the
+    # function signature. The reason we do this is Wasm has a single unified
+    # function table while asm.js maintains separate function table per
+    # signature.
+    # e.g. When there are three possible function signature, ['v', 'ii', 'ff'],
+    # the 'sig_order' parameter will be 0 for 'v', 1 for 'ii', and so on.
+    if Settings.WASM_BACKEND:
+      index = 'index + %d' % (Settings.RESERVED_FUNCTION_POINTERS * sig_order)
+    else:
+      index = 'index'
     ret = '''function%s(%s) {
-    %sfunctionPointers[index](%s);
-}''' % ((' jsCall_' + sig) if named else '', args, 'return ' if sig[0] != 'v' else '', fnargs)
+    %sfunctionPointers[%s](%s);
+}''' % ((' jsCall_' + sig) if named else '', args, 'return ' if sig[0] != 'v' else '', index, fnargs)
     return ret
 
   @staticmethod
