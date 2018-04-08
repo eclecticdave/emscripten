@@ -163,12 +163,12 @@ mergeInto(LibraryManager.library, {
         if (val === null || val === {{{ charCode('\n') }}}) {
           Module['print'](UTF8ArrayToString(tty.output, 0));
           tty.output = [];
-        } else if (val != 0) {
+        } else if (val) {
           tty.output.push(val); // val == 0 would cut text output off in the middle.
         }
       },
       write: function(offset, length, buffer) {
-        if (Module['printChars'] != undefined && length) {
+        if (Module['printChars'] && length) {
           Module['printChars'](offset, 1, length, buffer);
         }
       },
@@ -184,7 +184,7 @@ mergeInto(LibraryManager.library, {
         if (val === null || val === {{{ charCode('\n') }}}) {
           Module['printErr'](UTF8ArrayToString(tty.output, 0));
           tty.output = [];
-        } else if (val != 0) {
+        } else if (val) {
           tty.output.push(val);
         }
       },

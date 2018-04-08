@@ -427,14 +427,16 @@ function stringToAscii(str, outPtr) {
 #if TEXTDECODER
 var UTF8Decoder = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf8') : undefined;
 #endif
-function UTF8ArrayToString(u8Array, idx, len) {
+function UTF8ArrayToString(u8Array, idx, maxLen) {
 #if TEXTDECODER
   var endPtr = idx;
-  // If len parameter is not passed, we need to find the length of the string.
   // TextDecoder needs to know the byte length in advance, it doesn't stop on null terminator by itself.
   // Also, use the length info to avoid running tiny strings through TextDecoder, since .subarray() allocates garbage.
-  if (len == undefined) while (u8Array[endPtr]) ++endPtr;
-  else endPtr += len;
+  // We also limit the length of the string to a maximum of 'maxLen' if it is passed.
+  while (u8Array[endPtr]) {
+    if (maxLen != undefined && (idx + maxLen) == endPtr) break;
+    ++endPtr;
+  }
 
   if (endPtr - idx > 16 && u8Array.subarray && UTF8Decoder) {
 #ifdef USE_PTHREADS
