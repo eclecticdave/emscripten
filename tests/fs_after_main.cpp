@@ -56,14 +56,14 @@ int main() {
   fclose(f);
   printf("Looping...\n");
   EM_ASM({
-#if USE_PRINTCHARS_FOR_STDOUT == 0
+#if UNBUFFERED_PRINT == 0
     Module['print']('js');
 #else
     Module['printChars']('js');
 #endif
     var counter = 0;
     function looper() {
-#if USE_PRINTCHARS_FOR_STDOUT == 0
+#if UNBUFFERED_PRINT == 0
       Module['print']('js looping');
 #else
     Module['printChars']('js looping');
@@ -71,14 +71,14 @@ int main() {
       Module['_looper']();
       counter++;
       if (counter < 5) {
-#if USE_PRINTCHARS_FOR_STDOUT == 0
+#if UNBUFFERED_PRINT == 0
         Module['print']('js queueing');
 #else
     Module['printChars']('js queueing');
 #endif
         setTimeout(looper, 1);
       } else {
-#if USE_PRINTCHARS_FOR_STDOUT == 0
+#if UNBUFFERED_PRINT == 0
         Module['print']('js finishing');
 #else
     Module['printChars']('js finishing');

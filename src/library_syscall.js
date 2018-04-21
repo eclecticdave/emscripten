@@ -808,7 +808,7 @@ var SyscallsLibrary = {
     // hack to support printf in NO_FILESYSTEM
     var stream = SYSCALLS.get(), iov = SYSCALLS.get(), iovcnt = SYSCALLS.get();
     var ret = 0;
-#if USE_PRINTCHARS_FOR_STDOUT == 0    
+#if !UNBUFFERED_PRINT
     if (!___syscall146.buffers) {
       ___syscall146.buffers = [null, [], []]; // 1 => stdout, 2 => stderr
       ___syscall146.printChar = function(stream, curr) {
@@ -826,12 +826,12 @@ var SyscallsLibrary = {
     for (var i = 0; i < iovcnt; i++) {
       var ptr = {{{ makeGetValue('iov', 'i*8', 'i32') }}};
       var len = {{{ makeGetValue('iov', 'i*8 + 4', 'i32') }}};
-#if USE_PRINTCHARS_FOR_STDOUT == 0  
+#if UNBUFFERED_PRINT
+      if (len > 0) Module['printChars'](ptr, stream, len, {{{ heapAndOffset('HEAP8', 'ptr') }}});
+#else
       for (var j = 0; j < len; j++) {
         ___syscall146.printChar(stream, HEAPU8[ptr+j]);
       }
-#else
-      if (len > 0) Module['printChars'](ptr, stream, len, {{{ heapAndOffset('HEAP8', 'ptr') }}});
 #endif
       ret += len;
     }

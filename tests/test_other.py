@@ -3053,7 +3053,7 @@ int main(void) {
 var Module = { print: function(x) { throw '<{(' + x + ')}>' } };
 ''')
 
-    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'USE_PRINTCHARS_FOR_STDOUT=0']).communicate()
+    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'UNBUFFERED_PRINT=0']).communicate()
     output = run_js(os.path.join(self.get_dir(), 'a.out.js'), stderr=PIPE, full_output=True, engine=NODE_JS, assert_returncode=None)
     assert r'<{(123456789)}>' in output, output
 
@@ -3076,7 +3076,7 @@ var Module = {
              };
 ''')
 
-    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'NO_EXIT_RUNTIME=0', '-s', 'USE_PRINTCHARS_FOR_STDOUT=1']).communicate()
+    Popen([PYTHON, EMCC, 'code.cpp', '--pre-js', 'pre.js', '-s', 'NO_EXIT_RUNTIME=0', '-s', 'UNBUFFERED_PRINT=1']).communicate()
     output = run_js(os.path.join(self.get_dir(), 'a.out.js'), stderr=PIPE, full_output=True, engine=NODE_JS, assert_returncode=None)
     assert r'<{(123456789)}>' in output, output
 

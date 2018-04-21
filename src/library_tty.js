@@ -73,7 +73,7 @@ mergeInto(LibraryManager.library, {
         return bytesRead;
       },
       write: function(stream, buffer, offset, length, pos) {
-#if USE_PRINTCHARS_FOR_STDOUT == 1
+#if UNBUFFERED_PRINT
         if (!stream.tty || !stream.tty.ops.write) {
           throw new FS.ErrnoError(ERRNO_CODES.ENXIO);
         }

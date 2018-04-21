@@ -439,7 +439,7 @@ function UTF8ArrayToString(u8Array, idx, maxLen) {
   }
 
   if (endPtr - idx > 16 && u8Array.subarray && UTF8Decoder) {
-#ifdef USE_PTHREADS
+#if USE_PTHREADS
     // Need to copy the data to a non-shared buffer as TextDecoder isn't compatible with SharedArrayBuffer.
     // Uint8Array.from would be more readable, but isn't universally available.
     return UTF8Decoder.decode(Uint8Array.prototype.slice.call(u8Array.subarray(idx, endPtr)));
