@@ -827,7 +827,7 @@ var SyscallsLibrary = {
       var ptr = {{{ makeGetValue('iov', 'i*8', 'i32') }}};
       var len = {{{ makeGetValue('iov', 'i*8 + 4', 'i32') }}};
 #if UNBUFFERED_PRINT
-      if (len > 0) Module['printChars'](ptr, stream, len, {{{ heapAndOffset('HEAP8', 'ptr') }}});
+      if (len > 0) Module['printChars'](stream, ptr, len, {{{ heapAndOffset('HEAP8', 'ptr') }}});
 #else
       for (var j = 0; j < len; j++) {
         ___syscall146.printChar(stream, HEAPU8[ptr+j]);

@@ -433,10 +433,12 @@ function UTF8ArrayToString(u8Array, idx, maxLen) {
   // TextDecoder needs to know the byte length in advance, it doesn't stop on null terminator by itself.
   // Also, use the length info to avoid running tiny strings through TextDecoder, since .subarray() allocates garbage.
   // We also limit the length of the string to a maximum of 'maxLen' if it is passed.
-  while (u8Array[endPtr]) {
-    if (maxLen != undefined && (idx + maxLen) == endPtr) break;
-    ++endPtr;
-  }
+  if (maxLen != undefined) {
+    var maxPtr = idx + maxLen;
+    while (endPtr < maxPtr && u8Array[endPtr]) ++endPtr;
+  } else {
+    while(u8Array[endPtr]) ++endPtr;
+  }  
 
   if (endPtr - idx > 16 && u8Array.subarray && UTF8Decoder) {
 #if USE_PTHREADS

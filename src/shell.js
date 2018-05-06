@@ -273,9 +273,9 @@ else {
 Module['print'] = typeof console !== 'undefined' ? console.log.bind(console) : (typeof print !== 'undefined' ? print : null);
 Module['printErr'] = typeof printErr !== 'undefined' ? printErr : ((typeof console !== 'undefined' && console.warn.bind(console)) || Module['print']);
 
-Module['printChars'] = function(strOrOffset, fd, len, buffer) {
+#if UNBUFFERED_PRINT
+Module['printChars'] = function(fd, strOrOffset, len, buffer) {
   buffer = buffer || HEAPU8;
-  if (fd == undefined) fd = 1;
   
   var str = UTF8ArrayToString((typeof strOrOffset === 'number') ? buffer : strOrOffset, strOrOffset, len);
 
@@ -286,6 +286,7 @@ Module['printChars'] = function(strOrOffset, fd, len, buffer) {
     putstr(str);
   }
 }
+#endif
 
 // *** Environment setup code ***
 

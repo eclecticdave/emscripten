@@ -77,10 +77,8 @@
         preRun: [],
         postRun: [],
         fdBuf: ['', '', ''],
-        printChars: function(strOrOffset, fd, len, buffer) {
-          buffer = buffer || HEAPU8;
-          if (fd == undefined) fd = 1;
-          var str = UTF8ArrayToString((typeof strOrOffset === 'number') ? buffer : strOrOffset, strOrOffset, len);
+        printChars: function(fd, strOrOffset, len, buffer) {
+          var str = UTF8ArrayToString((typeof strOrOffset === 'number') ? buffer || HEAPU8 : strOrOffset, strOrOffset, len);
           var consoleElement = document.getElementById('output');
           consoleElement.value += str;
           consoleElement.scrollTop = consoleElement.scrollHeight;
@@ -102,11 +100,11 @@
         },
         print: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(text, 1, text.length);
+          Module.printChars(1, text, text.length);
         },
         printErr: function() {
           var text = Array.prototype.slice.call(arguments).join(' ') + '\n';
-          Module.printChars(text, 2, text.length);
+          Module.printChars(2, text, text.length);
         },
         canvas: (function() {
           var canvas = document.getElementById('canvas');

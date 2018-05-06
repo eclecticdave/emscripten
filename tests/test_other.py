@@ -3068,7 +3068,7 @@ int main(void) {
 
     open('pre.js', 'w').write(r'''
 var Module = {
-               printChars: function(str_or_offset, fd, len, buffer) {
+               printChars: function(fd, str_or_offset, len, buffer) {
                  buffer = buffer || HEAPU8;
                  var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
                  throw '<{(' + str + ')}>';

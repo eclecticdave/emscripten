@@ -328,7 +328,7 @@ function checkUnflushedContent() {
   Module['print'] = Module['printErr'] = function(x) {
       has = true;
   }
-  Module['printChars'] = function(ptr, fd, len) { has = true; }
+  Module['printChars'] = function(fd, ptr, len) { has = true; }
 
   try { // it doesn't matter if it fails
 #if NO_FILESYSTEM

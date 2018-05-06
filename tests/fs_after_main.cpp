@@ -44,10 +44,10 @@ int main() {
         Module['extraSecretBuffer'] += x;
         realPrint(x);
       };
-      Module['printChars'] = function(str_or_offset, fd, len, buffer) {
+      Module['printChars'] = function(fd, str_or_offset, len, buffer) {
         var str = UTF8ArrayToString((typeof str_or_offset === 'number') ? buffer : str_or_offset, str_or_offset, len);
         Module['extraSecretBuffer'] += str;
-        realPrintChars(str_or_offset, fd, len, buffer);
+        realPrintChars(fd, str_or_offset, len, buffer);
       }
     })();
   });
@@ -59,14 +59,14 @@ int main() {
 #if UNBUFFERED_PRINT == 0
     Module['print']('js');
 #else
-    Module['printChars']('js');
+    Module['printChars'](1, 'js');
 #endif
     var counter = 0;
     function looper() {
 #if UNBUFFERED_PRINT == 0
       Module['print']('js looping');
 #else
-    Module['printChars']('js looping');
+    Module['printChars'](1, 'js looping');
 #endif
       Module['_looper']();
       counter++;
@@ -74,14 +74,14 @@ int main() {
 #if UNBUFFERED_PRINT == 0
         Module['print']('js queueing');
 #else
-    Module['printChars']('js queueing');
+    Module['printChars'](1, 'js queueing');
 #endif
         setTimeout(looper, 1);
       } else {
 #if UNBUFFERED_PRINT == 0
         Module['print']('js finishing');
 #else
-    Module['printChars']('js finishing');
+    Module['printChars'](1, 'js finishing');
 #endif
         setTimeout(Module['_finish'], 1);
       }

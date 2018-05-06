@@ -169,7 +169,7 @@ mergeInto(LibraryManager.library, {
       },
       write: function(offset, length, buffer) {
         if (Module['printChars'] && length) {
-          Module['printChars'](offset, 1, length, buffer);
+          Module['printChars'](1, offset, length, buffer);
         }
       },
       flush: function(tty) {
@@ -190,7 +190,7 @@ mergeInto(LibraryManager.library, {
       },
       write: function(offset, length, buffer) {
         if (Module['printChars'] != undefined && length) {
-          Module['printChars'](offset, 2, length, buffer);
+          Module['printChars'](2, offset, length, buffer);
         }
       },
       flush: function(tty) {
