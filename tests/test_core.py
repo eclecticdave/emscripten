@@ -96,26 +96,21 @@ class T(RunnerCore): # Short name, to make it more fun to use manually on the co
   def do_run_in_out_file_test(self, *path, **kwargs):
       test_path = path_from_root(*path)
 
-      def find_extension(*ext_list):
+      def find_files(*ext_list):
         ret = None
         count = 0
         for ext in ext_list:
           if os.path.isfile(test_path + ext):
-            ret = ext
+            ret = test_path + ext
             count += 1
-        if count == 0:
-          assert False, ("No file found at {} with extension {}"
-                         .format(test_path, ext_list))
-        if count > 1:
-          assert False, ("Test file {} found with multiple valid extensions {}"
-                         .format(test_path, ext_list))
+        assert count > 0, ("No file found at {} with extension {}"
+                           .format(test_path, ext_list))
+        assert count <= 1, ("Test file {} found with multiple valid extensions {}"
+                            .format(test_path, ext_list))
         return ret
 
-      input_extensions = find_extension('.c', '.cpp', '.cc')
-      output_extensions = find_extension('.out', '.txt')
-      extensions = (input_extensions, output_extensions)
-
-      src, output = (test_path + ext for ext in extensions)
+      src = find_files('.c', '.cpp', '.cc')
+      output = find_files('.out', '.txt')
       self.do_run_from_file(src, output, **kwargs)
 
   def test_hello_world(self):
@@ -252,7 +247,6 @@ class T(RunnerCore): # Short name, to make it more fun to use manually on the co
     # extra coverages
     for emulate_casts in [0, 1]:
       for emulate_fps in [0, 1, 2]:
-        if self.is_wasm() and emulate_casts and emulate_fps: continue # in wasm we can't do both
         print(emulate_casts, emulate_fps)
         Settings.EMULATE_FUNCTION_POINTER_CASTS = emulate_casts
         Settings.EMULATED_FUNCTION_POINTERS = emulate_fps
@@ -1244,6 +1238,10 @@ int main(int argc, char **argv)
     Settings.DISABLE_EXCEPTION_CATCHING = 0
     self.do_run_in_out_file_test('tests', 'core', 'test_exceptions_libcxx')
 
+  def test_exceptions_multiple_inherit(self):
+    Settings.DISABLE_EXCEPTION_CATCHING = 0
+    self.do_run_in_out_file_test('tests', 'core', 'test_exceptions_multiple_inherit')
+
   def test_bad_typeid(self):
     Settings.ERROR_ON_UNDEFINED_SYMBOLS = 1
     Settings.DISABLE_EXCEPTION_CATCHING = 0
@@ -1605,7 +1603,7 @@ def process(filename):
 
     if self.run_name == 'asm2':
       self.emcc_args += ['--closure', '1'] # Use closure here for some additional coverage
-    self.do_run(open(path_from_root('tests', 'emscripten_get_now.cpp')).read(), 'Timer resolution is good.')
+    self.do_run(open(path_from_root('tests', 'emscripten_get_now.cpp')).read(), 'Timer resolution is good')
 
   def test_emscripten_get_compiler_setting(self):
     test_path = path_from_root('tests', 'core', 'emscripten_get_compiler_setting')
@@ -2780,6 +2778,87 @@ def process(filename):
     self.do_run(src, '100\n200\n13\n42\n',
                 post_build=self.dlfcn_post_build)
 
+  def test_dlfcn_alignment_and_zeroing(self):
+    if not self.can_dlfcn(): return
+
+    self.prep_dlfcn_lib()
+    Settings.TOTAL_MEMORY = 16 * 1024 * 1024
+    lib_src = r'''
+      extern "C" {
+        int prezero = 0;
+        __attribute__((aligned(1024))) int superAligned = 12345;
+        int postzero = 0;
+      }
+      '''
+    dirname = self.get_dir()
+    filename = os.path.join(dirname, 'liblib.cpp')
+    self.build_dlfcn_lib(lib_src, dirname, filename)
+    for i in range(10):
+      curr = '%d.so' % i
+      shutil.copyfile('liblib.so', curr)
+      self.emcc_args += ['--embed-file', curr]
+
+    self.prep_dlfcn_main()
+    Settings.TOTAL_MEMORY = 128 * 1024 * 1024
+    src = r'''
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include <string.h>
+      #include <dlfcn.h>
+      #include <assert.h>
+      #include <emscripten.h>
+
+      int main() {
+        printf("'prepare' memory with non-zero inited stuff\n");
+        int num = 120 * 1024 * 1024; // total is 128; we'll use 5*5 = 25 at least, so allocate pretty much all of it
+        void* mem = malloc(num);
+        assert(mem);
+        printf("setting this range to non-zero: %d - %d\n", int(mem), int(mem) + num);
+        memset(mem, 1, num);
+        EM_ASM({
+          var value = HEAP8[64*1024*1024];
+          Module.print('verify middle of memory is non-zero: ' + value);
+          assert(value === 1);
+        });
+        free(mem);
+        for (int i = 0; i < 10; i++) {
+          printf("loading %d\n", i);
+          char* curr = "?.so";
+          curr[0] = '0' + i;
+          void* lib_handle = dlopen(curr, RTLD_NOW);
+          if (!lib_handle) {
+            puts(dlerror());
+            assert(0);
+          }
+          printf("getting superAligned\n");
+          int* superAligned = (int*)dlsym(lib_handle, "superAligned");
+          assert(superAligned);
+          assert(int(superAligned) % 1024 == 0); // alignment
+          printf("checking value of superAligned, at %d\n", superAligned);
+          assert(*superAligned == 12345); // value
+          printf("getting prezero\n");
+          int* prezero = (int*)dlsym(lib_handle, "prezero");
+          assert(prezero);
+          printf("checking value of prezero, at %d\n", prezero);
+          assert(*prezero == 0);
+          *prezero = 1;
+          assert(*prezero != 0);
+          printf("getting postzero\n");
+          int* postzero = (int*)dlsym(lib_handle, "postzero");
+          printf("checking value of postzero, at %d\n", postzero);
+          assert(postzero);
+          printf("checking value of postzero\n");
+          assert(*postzero == 0);
+          *postzero = 1;
+          assert(*postzero != 0);
+        }
+        printf("success.\n");
+        return 0;
+      }
+      '''
+    self.do_run(src, 'success.\n',
+                post_build=self.dlfcn_post_build)
+
   @no_wasm # TODO: this needs to add JS functions to a wasm Table, need to figure that out
   def test_dlfcn_self(self):
     if not self.can_dlfcn(): return
@@ -3592,11 +3671,13 @@ Module = {
       Initter initter;
     ''', expected=['extern is 456.\n'])
 
-  def test_dylink_mallocs(self):
+  def test_dylink_stdlib(self):
     self.dylink_test(header=r'''
+      #include <math.h>
       #include <stdlib.h>
       #include <string.h>
       char *side(const char *data);
+      double pow_two(double x);
     ''', main=r'''
       #include <stdio.h>
       #include "header.h"
@@ -3606,6 +3687,7 @@ Module = {
         strcpy(ret, temp);
         temp[1] = 'x';
         puts(ret);
+        printf("pow_two: %d.\n", int(pow_two(5.9)));
         return 0;
       }
     ''', side=r'''
@@ -3615,7 +3697,10 @@ Module = {
         strcpy(ret, data);
         return ret;
       }
-    ''', expected=['hello through side\n'])
+      double pow_two(double x) {
+        return pow(2, x);
+      }
+    ''', expected=['hello through side\n\npow_two: 59.'])
 
   def test_dylink_jslib(self):
     Settings.BINARYEN_TRAP_MODE = 'clamp' # avoid using asm2wasm imports, which don't work in side modules yet (should they?)
@@ -6065,9 +6150,11 @@ def process(filename):
       var ret;
       ret = Module['ccall']('get_int', 'number'); Module.print([typeof ret, ret].join(','));
       ret = ccall('get_float', 'number'); Module.print([typeof ret, ret.toFixed(2)].join(','));
+      ret = ccall('get_bool', 'boolean'); Module.print([typeof ret, ret].join(','));
       ret = ccall('get_string', 'string'); Module.print([typeof ret, ret].join(','));
       ret = ccall('print_int', null, ['number'], [12]); Module.print(typeof ret);
       ret = ccall('print_float', null, ['number'], [14.56]); Module.print(typeof ret);
+      ret = ccall('print_bool', null, ['boolean'], [true]); Module.print(typeof ret);
       ret = ccall('print_string', null, ['string'], ["cheez"]); Module.print(typeof ret);
       ret = ccall('print_string', null, ['array'], [[97, 114, 114, 45, 97, 121, 0]]); Module.print(typeof ret); // JS array
       ret = ccall('print_string', null, ['array'], [new Uint8Array([97, 114, 114, 45, 97, 121, 0])]); Module.print(typeof ret); // typed array
@@ -6093,7 +6180,7 @@ def process(filename):
   open(filename, 'w').write(src)
 '''
 
-    Settings.EXPORTED_FUNCTIONS += ['_get_int', '_get_float', '_get_string', '_print_int', '_print_float', '_print_string', '_multi', '_pointer', '_call_ccall_again', '_malloc']
+    Settings.EXPORTED_FUNCTIONS += ['_get_int', '_get_float', '_get_bool', '_get_string', '_print_int', '_print_float', '_print_bool', '_print_string', '_multi', '_pointer', '_call_ccall_again', '_malloc']
     self.do_run_in_out_file_test('tests', 'core', 'test_ccall', post_build=post)
 
     if '-O2' in self.emcc_args or self.is_emterpreter():
@@ -6456,11 +6543,12 @@ def process(filename):
     '''
     self.do_run(src, 'func1\nfunc2\n')
 
-  @no_wasm_backend('no implementation of emulated function pointer casts')
   def test_emulate_function_pointer_casts(self):
     Settings.EMULATE_FUNCTION_POINTER_CASTS = 1
 
-    self.do_run_in_out_file_test('tests', 'core', 'test_emulate_function_pointer_casts')
+    self.do_run(open(path_from_root('tests', 'core', 'test_emulate_function_pointer_casts.cpp')).read(),
+                ('|1.266,1|',                 # asm.js, double <-> int
+                 '|1.266,1413754136|')) # wasm, reinterpret the bits
 
   def test_demangle_stacks(self):
     Settings.DEMANGLE_SUPPORT = 1
@@ -6934,8 +7022,18 @@ Module.printErr = Module['printErr'] = function(){};
         # the file attribute is optional, but if it is present it needs to refer
         # the output file.
         self.assertPathsIdentical(map_referent, data['file'])
-      assert len(data['sources']) == 1, data['sources']
-      self.assertPathsIdentical(src_filename, data['sources'][0])
+      if not self.is_wasm_backend():
+        assert len(data['sources']) == 1, data['sources']
+        self.assertPathsIdentical(src_filename, data['sources'][0])
+      else:
+        # Wasm backend currently adds every file linked as part of compiler-rt
+        # to the 'sources' field.
+        # TODO(jgravelle): when LLD is the wasm-backend default, make sure it
+        # emits only the files we have lines for.
+        assert len(data['sources']) > 1, data['sources']
+        normalized_srcs = [src.replace('\\', '/') for src in data['sources']]
+        normalized_filename = src_filename.replace('\\', '/')
+        assert normalized_filename in normalized_srcs, "Source file not found"
       if hasattr(data, 'sourcesContent'):
         # the sourcesContent attribute is optional, but if it is present it
         # needs to containt valid source text.
@@ -7310,51 +7408,10 @@ int main() {
 
   def do_test_coroutine(self, additional_settings):
     Settings.NO_EXIT_RUNTIME = 0 # needs to flush stdio streams
-    src = r'''
-#include <stdio.h>
-#include <emscripten.h>
-void fib(void * arg) {
-    int * p = (int*)arg;
-    int cur = 1;
-    int next = 1;
-    for(int i = 0; i < 9; ++i) {
-        *p = cur;
-        emscripten_yield();
-        int next2 = cur + next;
-        cur = next;
-        next = next2;
-    }
-}
-void f(void * arg) {
-    int * p = (int*)arg;
-    *p = 0;
-    emscripten_yield();
-    fib(arg); // emscripten_yield in fib() can `pass through` f() back to main(), and then we can assume inside fib()
-}
-void g(void * arg) {
-    int * p = (int*)arg;
-    for(int i = 0; i < 10; ++i) {
-        *p = 100+i;
-        emscripten_yield();
-    }
-}
-int main(int argc, char **argv) {
-    int i;
-    emscripten_coroutine co = emscripten_coroutine_create(f, (void*)&i, 0);
-    emscripten_coroutine co2 = emscripten_coroutine_create(g, (void*)&i, 0);
-    printf("*");
-    while(emscripten_coroutine_next(co)) {
-        printf("%d-", i);
-        emscripten_coroutine_next(co2);
-        printf("%d-", i);
-    }
-    printf("*");
-    return 0;
-}
-'''
+    src = open(path_from_root('tests', 'test_coroutines.cpp')).read()
     for (k, v) in additional_settings.items():
       Settings.__setattr__(k, v)
-    self.do_run(src, '*0-100-1-101-1-102-2-103-3-104-5-105-8-106-13-107-21-108-34-109-*')
+    self.do_run(src, '*leaf-0-100-1-101-1-102-2-103-3-104-5-105-8-106-13-107-21-108-34-109-*')
 
   def test_coroutine_asyncify(self):
     self.do_test_coroutine({'ASYNCIFY': 1})
@@ -7362,7 +7419,8 @@ int main(int argc, char **argv) {
   @no_wasm_backend('EMTERPRETIFY causes JSOptimizer to run, which is '
                    'unsupported with Wasm backend')
   def test_coroutine_emterpretify_async(self):
-    self.do_test_coroutine({'EMTERPRETIFY': 1, 'EMTERPRETIFY_ASYNC': 1})
+    # The same EMTERPRETIFY_WHITELIST should be in other.test_emterpreter_advise
+    self.do_test_coroutine({'EMTERPRETIFY': 1, 'EMTERPRETIFY_ASYNC': 1, 'EMTERPRETIFY_WHITELIST': ['_fib', '_f', '_g'], 'ASSERTIONS': 1})
 
   @no_emterpreter
   @no_wasm_backend('EMTERPRETIFY causes JSOptimizer to run, which is '

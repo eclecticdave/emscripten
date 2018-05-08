@@ -112,12 +112,29 @@ function loadWebAssemblyModule(binary) {
   assert(binary[next] === 'n'.charCodeAt(0)); next++;
   assert(binary[next] === 'k'.charCodeAt(0)); next++;
   var memorySize = getLEB();
+  var memoryAlign = getLEB();
   var tableSize = getLEB();
+  var tableAlign = getLEB();
+  // alignments are powers of 2
+  memoryAlign = Math.pow(2, memoryAlign);
+  tableAlign = Math.pow(2, tableAlign);
+  // finalize alignments and verify them
+  memoryAlign = Math.max(memoryAlign, STACK_ALIGN); // we at least need stack alignment
+  assert(tableAlign === 1);
+  // prepare memory
+  var memoryStart = alignMemory(getMemory(memorySize + memoryAlign), memoryAlign); // TODO: add to cleanups
+  // The static area consists of explicitly initialized data, followed by zero-initialized data.
+  // The latter may need zeroing out if the MAIN_MODULE has already used this memory area before
+  // dlopen'ing the SIDE_MODULE.  Since we don't know the size of the explicitly initialized data
+  // here, we just zero the whole thing, which is suboptimal, but should at least resolve bugs
+  // from uninitialized memory.
+  for (var i = memoryStart; i < memoryStart + memorySize; ++i) HEAP8[i] = 0;
+  // prepare env imports
   var env = Module['asmLibraryArg'];
   // TODO: use only memoryBase and tableBase, need to update asm.js backend
   var table = Module['wasmTable'];
   var oldTableSize = table.length;
-  env['memoryBase'] = env['gb'] = alignMemory(getMemory(memorySize + STACK_ALIGN), STACK_ALIGN); // TODO: add to cleanups
+  env['memoryBase'] = env['gb'] = memoryStart;
   env['tableBase'] = env['fb'] = oldTableSize;
   var originalTable = table;
   table.grow(tableSize);
@@ -139,8 +156,8 @@ function loadWebAssemblyModule(binary) {
     global: {
       'NaN': NaN,
       'Infinity': Infinity,
-      'Math': Math
     },
+    'global.Math': Math,
     env: env
   };
 #if ASSERTIONS
@@ -170,9 +187,23 @@ function loadWebAssemblyModule(binary) {
   var exports = {};
   for (var e in instance.exports) {
     var value = instance.exports[e];
+    if (typeof value === 'object') {
+      // a breaking change in the wasm spec, globals are now objects
+      // https://github.com/WebAssembly/mutable-global/issues/1
+      value = value.value;
+    }
     if (typeof value === 'number') {
       // relocate it - modules export the absolute value, they can't relocate before they export
-      value = value + env['memoryBase'];
+#if EMULATED_FUNCTION_POINTERS
+      // it may be a function pointer
+      if (e.substr(0, 3) == 'fp$' && typeof instance.exports[e.substr(3)] === 'function') {
+        value = value + env['tableBase'];
+      } else {
+#endif
+        value = value + env['memoryBase'];
+#if EMULATED_FUNCTION_POINTERS
+      }
+#endif
     }
     exports[e] = value;
   }
@@ -284,7 +315,7 @@ function addFunction(func, sig) {
   throw 'Finished up all reserved function pointers. Use a higher value for RESERVED_FUNCTION_POINTERS.';
 #else
 #if BINARYEN
-  // we can simply appent to the wasm table
+  // we can simply append to the wasm table
   var table = Module['wasmTable'];
   var ret = table.length;
   table.grow(1);

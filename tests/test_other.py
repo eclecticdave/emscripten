@@ -47,6 +47,17 @@ class clean_write_access_to_canonical_temp_dir(object):
       self.clean_emcc_files_in_temp_dir()
 
 class other(RunnerCore):
+  # Utility to run a simple test in this suite. This receives a directory which
+  # should contain a test.cpp and test.out files, compiles the cpp, and runs it
+  # to verify the output, with optional compile and run arguments.
+  # TODO: use in more places
+  def do_other_test(self, dirname, emcc_args=[], run_args=[]):
+    shutil.copyfile(path_from_root('tests', dirname, 'test.cpp'), 'test.cpp')
+    run_process([PYTHON, EMCC, 'test.cpp'] + emcc_args)
+    expected = open(path_from_root('tests', dirname, 'test.out')).read()
+    seen = run_js('a.out.js', args=run_args) + '\n'
+    self.assertContained(expected, seen)
+
   def test_emcc_v(self):
     for compiler in [EMCC, EMXX]:
       # -v, without input files
@@ -74,10 +85,9 @@ class other(RunnerCore):
 
       output = run_process(py + [path_from_root('emcc'), '--version'], stdout=PIPE, stderr=PIPE, env=env).stderr
       expected_call = 'Running on Python %s which is not officially supported yet' % major
-      if major > 2:
-        assert expected_call in output
-      else:
-        assert expected_call not in output
+      # we currently support python 2 and 3 officially
+      assert expected_call not in output
+      assert output == '', output
 
   def test_emcc(self):
     for compiler in [EMCC, EMXX]:
@@ -101,7 +111,7 @@ There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR P
       # -dumpmachine
       output = run_process([PYTHON, compiler, '-dumpmachine'], stdout=PIPE, stderr=PIPE)
       self.assertContained(get_llvm_target(), output.stdout)
-      
+
       # -dumpversion
       output = run_process([PYTHON, compiler, '-dumpversion'], stdout=PIPE, stderr=PIPE)
       self.assertEqual(EMSCRIPTEN_VERSION + os.linesep, output.stdout, 'results should be identical')
@@ -2181,7 +2191,7 @@ Goodbye, Dave.''', open('out.txt').read())
     open(os.path.join(self.get_dir(), 'test.file'), 'w').write('''ay file..............,,,,,,,,,,,,,,''')
     open(os.path.join(self.get_dir(), 'stdin'), 'w').write('''inter-active''')
     subprocess.check_call([PYTHON, EMCC, os.path.join(self.get_dir(), 'files.cpp'), '-c'])
-    run_process([PYTHON, path_from_root('tools', 'nativize_llvm.py'), os.path.join(self.get_dir(), 'files.o')], stdout=PIPE)
+    subprocess.check_call([PYTHON, path_from_root('tools', 'nativize_llvm.py'), os.path.join(self.get_dir(), 'files.o')])
     output = run_process([os.path.join(self.get_dir(), 'files.o.run')], stdin=open(os.path.join(self.get_dir(), 'stdin')), stdout=PIPE, stderr=PIPE)
     self.assertContained('''size: 37
 data: 119,97,107,97,32,119,97,107,97,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35,35
@@ -3843,6 +3853,9 @@ int main(int argc, char **argv) {
     Popen([PYTHON, EMCC, 'src.cpp']).communicate()
     self.assertContained('read: 0\nfile size is 104\n', run_js('a.out.js'))
 
+  def test_unlink(self):
+    self.do_other_test(os.path.join('other', 'unlink'))
+
   def test_argv0_node(self):
     open('code.cpp', 'w').write(r'''
 #include <stdio.h>
@@ -4240,21 +4253,7 @@ EMSCRIPTEN_KEEPALIVE __EMSCRIPTEN_major__ __EMSCRIPTEN_minor__ __EMSCRIPTEN_tiny
     assert len(without_dash_o) != 0
 
   def test_malloc_implicit(self):
-    open('src.cpp', 'w').write(r'''
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-int main() {
-  const char *home = getenv("HOME");
-  for(unsigned int i = 0; i < 5; ++i) {
-    const char *curr = getenv("HOME");
-    assert(curr == home);
-  }
-  printf("ok\n");
-}
-    ''')
-    Popen([PYTHON, EMCC, 'src.cpp']).communicate()
-    self.assertContained('ok', run_js('a.out.js'))
+    self.do_other_test(os.path.join('other', 'malloc_implicit'))
 
   def test_switch64phi(self):
     # issue 2539, fastcomp segfault on phi-i64 interaction
@@ -4449,7 +4448,7 @@ int main()
     try:
       os.environ['EMCC_FORCE_STDLIBS'] = 'libc,libcxxabi,libcxx'
       os.environ['EMCC_ONLY_FORCED_STDLIBS'] = '1'
-      Popen([PYTHON, EMXX, 'src.cpp']).communicate()
+      Popen([PYTHON, EMXX, 'src.cpp', '-s', 'DISABLE_EXCEPTION_CATCHING=0']).communicate()
       self.assertContained('Caught exception: std::exception', run_js('a.out.js', stderr=PIPE))
     finally:
       del os.environ['EMCC_FORCE_STDLIBS']
@@ -4531,6 +4530,10 @@ int main()
 ''')
     Popen([PYTHON, EMCC, 'src.cpp']).communicate()
     self.assertContained('ok!', run_js('a.out.js'))
+
+  def test_strptime_symmetry(self):
+    Building.emcc(path_from_root('tests','strptime_symmetry.cpp'), output_filename='a.out.js')
+    self.assertContained('TEST PASSED', run_js('a.out.js'))
 
   def test_truncate_from_0(self):
     open('src.cpp', 'w').write(r'''
@@ -4886,7 +4889,7 @@ main(const int argc, const char * const * const argv)
   }
 }
     ''')
-    Popen([PYTHON, EMCC, 'src.cpp', '-s', 'NO_EXIT_RUNTIME=0']).communicate()
+    Popen([PYTHON, EMCC, 'src.cpp', '-s', 'NO_EXIT_RUNTIME=0', '-s', 'DISABLE_EXCEPTION_CATCHING=0']).communicate()
     self.assertContained('Constructed locale "C"\nThis locale is the global locale.\nThis locale is the C locale.', run_js('a.out.js', args=['C']))
     self.assertContained('''Can't construct locale "waka": collate_byname<char>::collate_byname failed to construct for waka''', run_js('a.out.js', args=['waka'], assert_returncode=1))
 
@@ -5387,7 +5390,7 @@ function _main() {
       post = post.split('\n')[0]
       seen = int(post)
       print('  seen', seen, ', expected ', expected, type(seen), type(expected))
-      assert expected == seen or (seen in expected if type(expected) in [list, tuple] else False), ['expect', expected, 'but see', seen]
+      assert expected == seen or (type(expected) in [list, tuple] and seen in expected), ['expect', expected, 'but see', seen]
 
     do_log_test(path_from_root('tests', 'primes.cpp'), list(range(88, 94)), '_main')
     do_log_test(path_from_root('tests', 'fannkuch.cpp'), list(range(226, 235)), '__Z15fannkuch_workerPv')
@@ -5401,6 +5404,40 @@ function _main() {
 
     out = run_process([PYTHON, EMCC, path_from_root('tests', 'emterpreter_advise_synclist.c'), '-s', 'EMTERPRETIFY=1', '-s', 'EMTERPRETIFY_ASYNC=1', '-s', 'EMTERPRETIFY_ADVISE=1', '-s', 'EMTERPRETIFY_SYNCLIST=["_j","_k"]'], stdout=PIPE).stdout
     self.assertContained('-s EMTERPRETIFY_WHITELIST=\'["_a", "_b", "_e", "_f", "_main"]\'', out)
+
+    # The same EMTERPRETIFY_WHITELIST should be in core.test_coroutine_emterpretify_async
+    out = run_process([PYTHON, EMCC, path_from_root('tests', 'test_coroutines.cpp'), '-s', 'EMTERPRETIFY=1', '-s', 'EMTERPRETIFY_ASYNC=1', '-s', 'EMTERPRETIFY_ADVISE=1'], stdout=PIPE).stdout
+    self.assertContained('-s EMTERPRETIFY_WHITELIST=\'["_f", "_fib", "_g"]\'', out)
+
+  def test_emterpreter_async_assertions(self):
+    # emterpretify-async mode with assertions adds checks on each call out of the emterpreter;
+    # make sure we handle all possible types there
+    for t, out in [
+      ('int',    '18.00'),
+      ('float',  '18.51'),
+      ('double', '18.51'),
+    ]:
+      print(t, out)
+      open('src.c', 'w').write(r'''
+        #include <stdio.h>
+        #include <emscripten.h>
+
+        #define TYPE %s
+
+        TYPE marfoosh(TYPE input) {
+          return input * 1.5;
+        }
+
+        TYPE fleefl(TYPE input) {
+          return marfoosh(input);
+        }
+
+        int main(void) {
+          printf("result: %%.2f\n", (double)fleefl((TYPE)12.34));
+        }
+      ''' % t)
+      run_process([PYTHON, EMCC, 'src.c', '-s', 'EMTERPRETIFY=1', '-s', 'EMTERPRETIFY_ASYNC=1', '-s', 'EMTERPRETIFY_WHITELIST=["_fleefl"]', '-s', 'PRECISE_F32=1'])
+      self.assertContained('result: ' + out, run_js('a.out.js'))
 
   def test_link_with_a_static(self):
     for args in [[], ['-O2']]:
@@ -5675,6 +5712,13 @@ print(os.environ.get('NM'))
 ''')
     check('emconfigure', [PYTHON, 'test.py'], expect=tools.shared.LLVM_NM)
 
+  def test_emmake_python(self):
+    # simulates a configure/make script that looks for things like CC, AR, etc., and which we should
+    # not confuse by setting those vars to something containing `python X` as the script checks for
+    # the existence of an executable.
+    result = run_process([PYTHON, path_from_root('emmake.py'), PYTHON, path_from_root('tests', 'emmake', 'make.py')], stdout=PIPE, stderr=PIPE)
+    print(result.stdout, result.stderr)
+
   def test_sdl2_config(self):
     for args, expected in [
       [['--version'], '2.0.0'],
@@ -5798,7 +5842,7 @@ int main() {
     for pre_fail, post_fail, opts in [
       ('', '', []),
       ('EM_ASM( Module.temp = HEAP32[DYNAMICTOP_PTR>>2] );', 'EM_ASM( assert(Module.temp === HEAP32[DYNAMICTOP_PTR>>2], "must not adjust DYNAMICTOP when an alloc fails!") );', []),
-      ('', '', ['-s', 'SPLIT_MEMORY=' + str(16*1024*1024)]),
+      ('', '', ['-s', 'SPLIT_MEMORY=' + str(16*1024*1024), '-DSPLIT']),
     ]:
       for growth in [0, 1]:
         for aborting in [0, 1]:
@@ -5812,6 +5856,19 @@ int main() {
 #define CHUNK_SIZE (10*1024*1024)
 
 int main() {
+  EM_ASM({
+    // we want to allocate a lot until eventually we can't anymore. to simulate that, we limit how much
+    // can be allocated by Buffer, so that if we don't hit a limit before that, we don't keep going into
+    // swap space and other bad things.
+    var old = Module['reallocBuffer'];
+    Module['reallocBuffer'] = function(size) {
+      if (size > 500 * 1024 * 1024) {
+        return null;
+      }
+      return old(size);
+    };
+  });
+
   std::vector<void*> allocs;
   bool has = false;
   while (1) {
@@ -5828,6 +5885,9 @@ int main() {
   }
   assert(has);
   printf("an allocation failed!\n");
+#ifdef SPLIT
+  return 0;
+#endif
   while (1) {
     assert(allocs.size() > 0);
     void *curr = allocs.back();
@@ -5844,11 +5904,19 @@ int main() {
           if not aborting: args += ['-s', 'ABORTING_MALLOC=0']
           print(args, pre_fail)
           check_execute(args)
-          manage_malloc = (not aborting) or growth # growth also disables aborting
-          output = run_js('a.out.js', stderr=PIPE, full_output=True, assert_returncode=0 if manage_malloc else None)
-          if manage_malloc:
-            # we should fail eventually, then free, then succeed
-            self.assertContained('''managed another malloc!\n''', output)
+          # growth also disables aborting
+          can_manage_another = (not aborting) or growth
+          split = '-DSPLIT' in args
+          print('can manage another:', can_manage_another, 'split:', split)
+          output = run_js('a.out.js', stderr=PIPE, full_output=True, assert_returncode=0 if can_manage_another else None)
+          if can_manage_another:
+            self.assertContained('''an allocation failed!\n''', output)
+            if not split:
+              # split memory allocation may fail due to GC objects no longer being allocatable,
+              # and we can't expect to recover from that deterministically. So just check we
+              # get to the fail.
+              # otherwise, we should fail eventually, then free, then succeed
+              self.assertContained('''managed another malloc!\n''', output)
           else:
             # we should see an abort
             self.assertContained('''abort("Cannot enlarge memory arrays''', output)
@@ -6902,11 +6970,37 @@ int main() {
     print(check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-s', '-std=c++03']))
     self.assertContained('hello, world!', run_js('a.out.js'))
 
-  def test_dash_s_error(self):
-    # missing quotes
-    err = run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), "-s", "EXTRA_EXPORTED_RUNTIME_METHODS=[addOnPostRun]"], stderr=PIPE, check=False).stderr
-    self.assertContained('NameError', err) # it failed
-    self.assertContained('one possible cause of this is missing quotation marks', err) # but we suggested the fix
+  def test_dash_s_response_file_string(self):
+    open('response_file', 'w').write('"MyModule"\n')
+    response_file = os.path.join(os.getcwd(), "response_file")
+    print(check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-s', 'EXPORT_NAME=@%s' % response_file]))
+
+  def test_dash_s_response_file_list(self):
+    open('response_file', 'w').write('["_main", "_malloc"]\n')
+    response_file = os.path.join(os.getcwd(), "response_file")
+    print(check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-s', 'EXPORTED_FUNCTIONS=@%s' % response_file, '-std=c++03']))
+
+  def test_dash_s_unclosed_quote(self):
+    # Unclosed quote
+    err = run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), "-s", "TEST_KEY='MISSING_QUOTE"], stderr=PIPE, check=False).stderr
+    self.assertNotContained('AssertionError', err) # Do not mention that it is an assertion error
+    self.assertContained('unclosed opened quoted string. expected final character to be "\'"', err)
+
+  def test_dash_s_single_quote(self):
+    # Only one quote
+    err = run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), "-s", "TEST_KEY='"], stderr=PIPE, check=False).stderr
+    self.assertNotContained('AssertionError', err) # Do not mention that it is an assertion error
+    self.assertContained('unclosed opened quoted string.', err)
+
+  def test_dash_s_unclosed_list(self):
+    # Unclosed list
+    err = run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), "-s", "TEST_KEY=[Value1, Value2"], stderr=PIPE, check=False).stderr
+    self.assertNotContained('AssertionError', err) # Do not mention that it is an assertion error
+    self.assertContained('unclosed opened string list. expected final character to be "]"', err)
+
+  def test_dash_s_valid_list(self):
+    err = run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), "-s", "TEST_KEY=[Value1, \"Value2\"]"], stderr=PIPE, check=False).stderr
+    self.assertNotContained('a problem occured in evaluating the content after a "-s", specifically', err)
 
   def test_python_2_3(self): # check emcc/em++ can be called by any python
     # remove .py from EMCC(=emcc.py)
@@ -7068,106 +7162,117 @@ int main() {
     self.assertContained('LLVM ERROR: EM_ASM should not receive i64s as inputs, they are not valid in JS', err)
 
   def test_eval_ctors(self):
-    print('non-terminating ctor')
-    src = r'''
-      struct C {
-        C() {
-          volatile int y = 0;
-          while (y == 0) {}
-        }
-      };
-      C always;
-      int main() {}
-    '''
-    open('src.cpp', 'w').write(src)
-    check_execute([PYTHON, EMCC, 'src.cpp', '-O2', '-s', 'EVAL_CTORS=1', '-profiling-funcs'])
-    print('check no ctors is ok')
-    check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-Oz'])
-    self.assertContained('hello, world!', run_js('a.out.js'))
-    # on by default in -Oz, but user-overridable
-    def get_size(args):
-      print('get_size', args)
-      check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_libcxx.cpp')] + args)
-      self.assertContained('hello, world!', run_js('a.out.js'))
-      return (os.stat('a.out.js').st_size, os.stat('a.out.js.mem').st_size)
-    def check_size(left, right):
-      if left[0] == right[0] and left[1] == right[1]: return 0
-      if left[0] < right[0] and left[1] > right[1]: return -1 # smaller js, bigger mem
-      if left[0] > right[0] and left[1] < right[1]: return 1
-      assert 0, [left, right]
-    o2_size = get_size(['-O2'])
-    assert check_size(get_size(['-O2']), o2_size) == 0, 'deterministic'
-    assert check_size(get_size(['-O2', '-s', 'EVAL_CTORS=1']), o2_size) < 0, 'eval_ctors works if user asks for it'
-    oz_size = get_size(['-Oz'])
-    assert check_size(get_size(['-Oz']), oz_size) == 0, 'deterministic'
-    assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=1']), oz_size) == 0, 'eval_ctors is on by default in oz'
-    assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=0']), oz_size) == 1, 'eval_ctors can be turned off'
-
-    linkable_size =   get_size(['-Oz', '-s', 'EVAL_CTORS=1', '-s', 'LINKABLE=1'])
-    assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=0', '-s', 'LINKABLE=1']), linkable_size) == 1, 'noticeable difference in linkable too'
-
-    # ensure order of execution remains correct, even with a bad ctor
-    def test(p1, p2, p3, last, expected):
+    for wasm in (1, 0):
+      print('wasm', wasm)
+      print('non-terminating ctor')
       src = r'''
-        #include <stdio.h>
-        #include <stdlib.h>
-        volatile int total = 0;
         struct C {
-          C(int x) {
-            volatile int y = x;
-            y++;
-            y--;
-            if (y == 0xf) {
-              printf("you can't eval me ahead of time\n"); // bad ctor
-            }
-            total <<= 4;
-            total += int(y);
+          C() {
+            volatile int y = 0;
+            while (y == 0) {}
           }
         };
-        C __attribute__((init_priority(%d))) c1(0x5);
-        C __attribute__((init_priority(%d))) c2(0x8);
-        C __attribute__((init_priority(%d))) c3(%d);
-        int main() {
-          printf("total is 0x%%x.\n", total);
-        }
-      ''' % (p1, p2, p3, last)
+        C always;
+        int main() {}
+      '''
       open('src.cpp', 'w').write(src)
-      check_execute([PYTHON, EMCC, 'src.cpp', '-O2', '-s', 'EVAL_CTORS=1', '-profiling-funcs'])
-      self.assertContained('total is %s.' % hex(expected), run_js('a.out.js'))
-      shutil.copyfile('a.out.js', 'x' + hex(expected) + '.js')
-      return open('a.out.js').read().count('function _')
-    print('no bad ctor')
-    first  = test(1000, 2000, 3000, 0xe, 0x58e)
-    second = test(3000, 1000, 2000, 0xe, 0x8e5)
-    third  = test(2000, 3000, 1000, 0xe, 0xe58)
-    print(first, second, third)
-    assert first == second and second == third
-    print('with bad ctor')
-    first  = test(1000, 2000, 3000, 0xf, 0x58f) # 2 will succeed
-    second = test(3000, 1000, 2000, 0xf, 0x8f5) # 1 will succedd
-    third  = test(2000, 3000, 1000, 0xf, 0xf58) # 0 will succeed
-    print(first, second, third)
-    assert first < second and second < third
+      check_execute([PYTHON, EMCC, 'src.cpp', '-O2', '-s', 'EVAL_CTORS=1', '-profiling-funcs', '-s', 'WASM=%d' % wasm])
+      print('check no ctors is ok')
+      check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-Oz', '-s', 'WASM=%d' % wasm])
+      self.assertContained('hello, world!', run_js('a.out.js'))
+      # on by default in -Oz, but user-overridable
+      def get_size(args):
+        print('get_size', args)
+        check_execute([PYTHON, EMCC, path_from_root('tests', 'hello_libcxx.cpp'), '-s', 'WASM=%d' % wasm] + args)
+        self.assertContained('hello, world!', run_js('a.out.js'))
+        if not wasm:
+          return (os.stat('a.out.js').st_size, os.stat('a.out.js.mem').st_size)
+        else:
+          return (os.stat('a.out.js').st_size, 0) # can't measure just the mem out of the wasm
+      def check_size(left, right):
+        # can't measure just the mem out of the wasm, so ignore [1] for wasm
+        if left[0] == right[0] and (wasm or left[1] == right[1]): return 0
+        if left[0] < right[0] and (wasm or left[1] > right[1]): return -1 # smaller js, bigger mem
+        if left[0] > right[0] and (wasm or left[1] < right[1]): return 1
+        assert 0, [left, right]
+      o2_size = get_size(['-O2'])
+      assert check_size(get_size(['-O2']), o2_size) == 0, 'deterministic'
+      assert check_size(get_size(['-O2', '-s', 'EVAL_CTORS=1']), o2_size) < 0, 'eval_ctors works if user asks for it'
+      oz_size = get_size(['-Oz'])
+      assert check_size(get_size(['-Oz']), oz_size) == 0, 'deterministic'
+      assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=1']), oz_size) == 0, 'eval_ctors is on by default in oz'
+      assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=0']), oz_size) == 1, 'eval_ctors can be turned off'
 
-    print('helpful output')
-    if os.environ.get('EMCC_DEBUG'): return self.skip('cannot run in debug mode')
-    try:
-      os.environ['EMCC_DEBUG'] = '1'
-      open('src.cpp', 'w').write(r'''
-#include <stdio.h>
-struct C {
-  C() { printf("constructing!\n"); } // don't remove this!
-};
-C c;
-int main() {}
-      ''')
-      with clean_write_access_to_canonical_temp_dir(self.canonical_temp_dir):
-        err = run_process([PYTHON, EMCC, 'src.cpp', '-Oz'], stderr=PIPE).stderr
-      self.assertContained('___syscall54', err) # the failing call should be mentioned
-      self.assertContained('ctorEval.js', err) # with a stack trace
-      self.assertContained('ctor_evaller: not successful', err) # with logging
-    finally:
-      del os.environ['EMCC_DEBUG']
+      linkable_size =   get_size(['-Oz', '-s', 'EVAL_CTORS=1', '-s', 'LINKABLE=1'])
+      assert check_size(get_size(['-Oz', '-s', 'EVAL_CTORS=0', '-s', 'LINKABLE=1']), linkable_size) == 1, 'noticeable difference in linkable too'
+
+      # ensure order of execution remains correct, even with a bad ctor
+      def test(p1, p2, p3, last, expected):
+        src = r'''
+          #include <stdio.h>
+          #include <stdlib.h>
+          volatile int total = 0;
+          struct C {
+            C(int x) {
+              volatile int y = x;
+              y++;
+              y--;
+              if (y == 0xf) {
+                printf("you can't eval me ahead of time\n"); // bad ctor
+              }
+              total <<= 4;
+              total += int(y);
+            }
+          };
+          C __attribute__((init_priority(%d))) c1(0x5);
+          C __attribute__((init_priority(%d))) c2(0x8);
+          C __attribute__((init_priority(%d))) c3(%d);
+          int main() {
+            printf("total is 0x%%x.\n", total);
+          }
+        ''' % (p1, p2, p3, last)
+        open('src.cpp', 'w').write(src)
+        check_execute([PYTHON, EMCC, 'src.cpp', '-O2', '-s', 'EVAL_CTORS=1', '-profiling-funcs', '-s', 'WASM=%d' % wasm])
+        self.assertContained('total is %s.' % hex(expected), run_js('a.out.js'))
+        shutil.copyfile('a.out.js', 'x' + hex(expected) + '.js')
+        if not wasm:
+          return open('a.out.js').read().count('function _')
+        else:
+          shutil.copyfile('a.out.wasm', 'x' + hex(expected) + '.wasm')
+          return self.count_wasm_contents('a.out.wasm', 'total')
+      print('no bad ctor')
+      first  = test(1000, 2000, 3000, 0xe, 0x58e)
+      second = test(3000, 1000, 2000, 0xe, 0x8e5)
+      third  = test(2000, 3000, 1000, 0xe, 0xe58)
+      print(first, second, third)
+      assert first == second and second == third
+      print('with bad ctor')
+      first  = test(1000, 2000, 3000, 0xf, 0x58f) # 2 will succeed
+      second = test(3000, 1000, 2000, 0xf, 0x8f5) # 1 will succedd
+      third  = test(2000, 3000, 1000, 0xf, 0xf58) # 0 will succeed
+      print(first, second, third)
+      assert first < second and second < third, [first, second, third]
+
+      print('helpful output')
+      if os.environ.get('EMCC_DEBUG'): return self.skip('cannot run in debug mode')
+      try:
+        os.environ['EMCC_DEBUG'] = '1'
+        open('src.cpp', 'w').write(r'''
+  #include <stdio.h>
+  struct C {
+    C() { printf("constructing!\n"); } // don't remove this!
+  };
+  C c;
+  int main() {}
+        ''')
+        with clean_write_access_to_canonical_temp_dir(self.canonical_temp_dir):
+          err = run_process([PYTHON, EMCC, 'src.cpp', '-Oz', '-s', 'WASM=%d' % wasm], stderr=PIPE).stderr
+        self.assertContained('___syscall54', err) # the failing call should be mentioned
+        if not wasm: # js will show a stack trace
+          self.assertContained('ctorEval.js', err) # with a stack trace
+        self.assertContained('ctor_evaller: not successful', err) # with logging
+      finally:
+        del os.environ['EMCC_DEBUG']
 
   def test_override_environment(self):
     open('main.cpp', 'w').write(r'''
@@ -7832,15 +7937,18 @@ int main() {
 
     print('test on hello world')
     test(path_from_root('tests', 'hello_world.cpp'), [
-      ([],      24, ['abort', 'tempDoublePtr'], ['waka'],                  46505, 25, 19),
-      (['-O1'], 19, ['abort', 'tempDoublePtr'], ['waka'],                  12630, 16, 17),
-      (['-O2'], 19, ['abort', 'tempDoublePtr'], ['waka'],                  12616, 16, 17),
-      (['-O3'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2818, 10,  2), # in -O3, -Os and -Oz we metadce
-      (['-Os'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2771, 10,  2),
-      (['-Oz'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2765, 10,  2),
+      ([],      24, ['abort', 'tempDoublePtr'], ['waka'],                  46505,  25,   19),
+      (['-O1'], 19, ['abort', 'tempDoublePtr'], ['waka'],                  12630,  16,   17),
+      (['-O2'], 19, ['abort', 'tempDoublePtr'], ['waka'],                  12616,  16,   17),
+      (['-O3'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2818,  10,    2), # in -O3, -Os and -Oz we metadce
+      (['-Os'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2771,  10,    2),
+      (['-Oz'],  7, ['abort'],                  ['tempDoublePtr', 'waka'],  2765,  10,    2),
       # finally, check what happens when we export nothing. wasm should be almost empty
       (['-Os', '-s', 'EXPORTED_FUNCTIONS=[]'],
-                 0, [],                         ['tempDoublePtr', 'waka'],     8,  0,  0), # totally empty!
+                 0, [],                         ['tempDoublePtr', 'waka'],     8,   0,    0), # totally empty!
+      # but we don't metadce with linkable code! other modules may want it
+      (['-O3', '-s', 'MAIN_MODULE=1'],
+              1542, ['invoke_i'],               ['waka'],                 496958, 168, 2558),
     ])
 
     print('test on a minimal pure computational thing')
@@ -7861,6 +7969,14 @@ int main() {
       (['-Os'],  0, [],                         ['tempDoublePtr', 'waka'],    58,  0,  1),
       (['-Oz'],  0, [],                         ['tempDoublePtr', 'waka'],    58,  0,  1),
     ])
+
+  # ensures runtime exports work, even with metadce
+  def test_extra_runtime_exports(self):
+    exports = ['stackSave', 'stackRestore', 'stackAlloc']
+    run_process([PYTHON, EMCC, path_from_root('tests', 'hello_world.cpp'), '-s', 'WASM=1', '-Os', '-s', 'EXTRA_EXPORTED_RUNTIME_METHODS=%s' % str(exports)])
+    js = open('a.out.js').read()
+    for export in exports:
+      assert ('Module["%s"]' % export) in js, export
 
   # test disabling of JS FFI legalization
   def test_legalize_js_ffi(self):
@@ -8196,3 +8312,9 @@ end
       except OSError:
         # Ignore missing python aliases.
         pass
+        
+  def test_ioctl_window_size(self):
+      self.do_other_test(os.path.join('other', 'ioctl', 'window_size'))
+
+  def test_fd_closed(self):
+    self.do_other_test(os.path.join('other', 'fd_closed'))
