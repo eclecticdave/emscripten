@@ -9,6 +9,37 @@ Not all changes are documented here. In particular, new features, user-oriented 
 
 Current Trunk
 -------------
+ - Correctness fix for stack handling in invoke_*()s. This may add noticeable overhead to programs using C++ exceptions and (less likely) setjmp/longjmp - please report any issues. See #6666 #6702
+ - Deprecate Module.ENVIRONMENT: Now that we have a compile-time option to set the environment, also having a runtime one on Module is complexity that we are better off without. When Module.ENVIRONMENT is used with ASSERTIONS it will show an error to direct users to the new option (-s ENVIRONMENT=web , or node, etc., at compile time).
+ - Breaking change: Do not export print/printErr by default. Similar to other similar changes (like getValue/setValue). We now use out() and err() functions in JS to print to stdout/stderr respectively. See #6756.
+
+v1.38.6: 06/13/2018
+-------------------
+
+v1.38.5: 06/04/2018
+-------------------
+ - Update libc++ to 6.0, bringing c++17 support (std::byte etc.)
+
+v1.38.4: 05/29/2018
+-------------------
+ - Fix asm.js validation regression from 1.38.2.
+
+v1.38.3: 05/25/2018
+-------------------
+ - Upgrade to LLVM 6.0.1.
+
+v1.38.2: 05/25/2018
+--------------------
+ - Add ENVIRONMENT option to specify at compile time we only need JS to support one runtime environment (e.g., just the web). When emitting HTML, set that to web so we emit web code only. #6565
+ - Regression in asm.js validation due to cttz optimization #6547
+
+v1.38.1: 05/17/2018
+-------------------
+ - Remove special-case support for src/struct_info.compiled.json: Make it a normal cached thing like system libraries, not something checked into the source tree.
+ - Breaking change: Emit WebAssembly by default. Only the default is changed - we of course still support asm.js, and will for a very long time. But changing the default makes sense as the recommended output for most use cases should be WebAssembly, given it has shipped in all major browsers and platforms and is more efficient than asm.js. Build with `-s WASM=0` to disable wasm and use asm.js if you want that (or use `-s LEGACY_VM_SUPPORT=1`, which emits output that can run in older browsers, which includes a bunch of polyfills as well as disables wasm). (#6419)
+
+v1.38.0: 05/09/2018
+-------------------
 
 v1.37.40: 05/07/2018
 --------------------
